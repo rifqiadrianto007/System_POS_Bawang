@@ -11,7 +11,10 @@ class SaleAllocation extends Model
 
     protected function casts(): array
     {
-        return ['is_shortfall' => 'boolean'];
+        return [
+            'weight_kg' => 'decimal:3',
+            'is_shortfall' => 'boolean',
+        ];
     }
 
     public function transactionItem(): BelongsTo

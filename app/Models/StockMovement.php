@@ -11,7 +11,10 @@ class StockMovement extends Model
 
     protected function casts(): array
     {
-        return ['occurred_at' => 'datetime'];
+        return [
+            'weight_kg' => 'decimal:3',
+            'occurred_at' => 'datetime',
+        ];
     }
 
     public function product(): BelongsTo

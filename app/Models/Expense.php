@@ -11,7 +11,10 @@ class Expense extends Model
 
     protected function casts(): array
     {
-        return ['spent_at' => 'date'];
+        return [
+            'amount' => 'integer',
+            'spent_at' => 'date',
+        ];
     }
 
     public function creator(): BelongsTo
