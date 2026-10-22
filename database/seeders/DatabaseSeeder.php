@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\Product;
+use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
@@ -73,6 +74,18 @@ class DatabaseSeeder extends Seeder
             'price_3kg' => 28500,
             'price_5kg' => 26000,
             'is_active' => true,
+        ]);
+
+        Supplier::query()->create([
+            'name' => 'Supplier Bawang Merah',
+            'phone' => '081234567801',
+            'note' => 'Pemasok bawang merah',
+        ]);
+
+        Supplier::query()->create([
+            'name' => 'Supplier Bawang Putih',
+            'phone' => '081234567802',
+            'note' => 'Pemasok bawang putih',
         ]);
     }
 }
