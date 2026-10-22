@@ -1,17 +1,21 @@
 <?php
 
 use App\Models\Product;
+use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-it('seeds one owner, two cashiers, and four products', function () {
+it('seeds one owner, two cashiers, four products, and two suppliers', function () {
     $this->seed();
 
     expect(User::query()->where('role', 'owner')->count())->toBe(1)
         ->and(User::query()->where('role', 'kasir')->count())->toBe(2)
-        ->and(Product::query()->count())->toBe(4);
+        ->and(Product::query()->count())->toBe(4)
+        ->and(Supplier::query()->count())->toBe(2)
+        ->and(Supplier::query()->pluck('name')->all())
+        ->toEqualCanonicalizing(['Supplier Bawang Merah', 'Supplier Bawang Putih']);
 });
 
 it('seeds the documented Merah A prices', function () {
