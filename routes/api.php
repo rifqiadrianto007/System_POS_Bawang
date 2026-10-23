@@ -1,9 +1,11 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\PurchaseController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\StockController;
 use App\Http\Controllers\StockCountController;
 use App\Http\Controllers\SupplierController;
@@ -42,12 +44,19 @@ Route::prefix('v1')->group(function (): void {
             Route::get('/expenses', [ExpenseController::class, 'index']);
             Route::post('/expenses', [ExpenseController::class, 'store']);
             Route::put('/expenses/{expense}', [ExpenseController::class, 'update']);
+            Route::get('/reports/finance', [ReportController::class, 'finance']);
+            Route::get('/reports/sales-by-product', [ReportController::class, 'salesByProduct']);
+            Route::get('/reports/stock', [ReportController::class, 'stock']);
+            Route::get('/reports/shifts', [ReportController::class, 'shifts']);
+            Route::get('/audit-logs', AuditLogController::class);
         });
         Route::post('/transactions/quote', TransactionQuoteController::class);
         Route::post('/transactions', [TransactionController::class, 'store']);
+        Route::get('/transactions/{transaction}', [TransactionController::class, 'show']);
         Route::post('/transactions/{transaction}/void', [TransactionController::class, 'void'])
             ->middleware('role:owner');
         Route::get('/transactions/{transaction}/receipt', [TransactionController::class, 'receipt']);
+        Route::get('/transactions/{transaction}/receipt/print', [TransactionController::class, 'printReceipt']);
         Route::get('/transactions', TransactionHistoryController::class);
     });
 });
