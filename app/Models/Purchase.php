@@ -12,7 +12,12 @@ class Purchase extends Model
 
     protected function casts(): array
     {
-        return ['purchased_at' => 'date', 'finalized_at' => 'datetime'];
+        return [
+            'purchased_at' => 'date',
+            'gross_weight_kg' => 'decimal:3',
+            'clean_weight_kg' => 'decimal:3',
+            'finalized_at' => 'datetime',
+        ];
     }
 
     public function supplier(): BelongsTo

@@ -12,7 +12,10 @@ class StockLot extends Model
 
     protected function casts(): array
     {
-        return ['cleaned_at' => 'date'];
+        return [
+            'clean_weight_kg' => 'decimal:3',
+            'cleaned_at' => 'date',
+        ];
     }
 
     public function purchase(): BelongsTo
