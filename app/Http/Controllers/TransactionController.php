@@ -10,6 +10,7 @@ use App\Models\Transaction;
 use App\Services\TransactionReceiptService;
 use App\Services\TransactionService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Response;
 use InvalidArgumentException;
 use LogicException;
 
@@ -53,5 +54,23 @@ class TransactionController extends Controller
         return new TransactionReceiptResource(
             $receiptService->get($transaction, request()->user())
         );
+    }
+
+    public function show(
+        Transaction $transaction,
+        TransactionReceiptService $receiptService
+    ): TransactionResource {
+        return new TransactionResource(
+            $receiptService->get($transaction, request()->user())
+        );
+    }
+
+    public function printReceipt(
+        Transaction $transaction,
+        TransactionReceiptService $receiptService
+    ): Response {
+        return response()->view('transactions.receipt-print', [
+            'transaction' => $receiptService->get($transaction, request()->user()),
+        ]);
     }
 }

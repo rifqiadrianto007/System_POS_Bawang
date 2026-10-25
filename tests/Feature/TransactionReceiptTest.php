@@ -74,6 +74,36 @@ it('returns structured receipt data for the cashier who owns the transaction', f
         ->assertJsonMissingPath('data.cogs');
 });
 
+it('renders a digital receipt with the documented discount example for browser printing', function () {
+    [$cashier, $token] = receiptUser('kasir', 'print');
+    $transaction = receiptTransaction($cashier, 'POS-261020-0005');
+    $transaction->forceFill([
+        'subtotal' => 75000,
+        'discount' => 5000,
+        'total' => 70000,
+    ])->save();
+    $transaction->items()->first()->forceFill([
+        'weight_kg' => '3.000',
+        'price_tier' => '3kg',
+        'price_per_kg' => 25000,
+        'line_total' => 75000,
+    ])->save();
+
+    $this->withToken($token)
+        ->get("/api/v1/transactions/{$transaction->id}/receipt/print")
+        ->assertOk()
+        ->assertHeader('content-type', 'text/html; charset=UTF-8')
+        ->assertSeeText('POS-261020-0005')
+        ->assertSeeText('Merah A')
+        ->assertSeeText('3.000 kg')
+        ->assertSeeText('Rp75.000')
+        ->assertSeeText('Diskon')
+        ->assertSeeText('Rp5.000')
+        ->assertSeeText('Rp70.000')
+        ->assertSee('window.print()', false)
+        ->assertDontSeeText('COGS');
+});
+
 it('allows the owner to retrieve any transaction receipt', function () {
     [$cashier] = receiptUser('kasir', 'owner-access');
     [, $ownerToken] = receiptUser('owner', 'owner-access');
@@ -93,6 +123,10 @@ it('denies a cashier access to another cashier receipt', function () {
 
     $this->withToken($otherToken)
         ->getJson("/api/v1/transactions/{$transaction->id}/receipt")
+        ->assertForbidden();
+
+    $this->withToken($otherToken)
+        ->get("/api/v1/transactions/{$transaction->id}/receipt/print")
         ->assertForbidden();
 });
 
