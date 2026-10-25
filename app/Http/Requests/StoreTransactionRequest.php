@@ -22,7 +22,7 @@ class StoreTransactionRequest extends FormRequest
             'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
             'items.*.weight_kg' => ['required', 'string', 'regex:/^(?:0|[1-9]\d{0,3})(?:\.\d{1,3})?$/'],
             'payment_method' => ['required', 'in:cash,qris'],
-            'final_total' => ['nullable', 'integer', 'min:0'],
+            'final_total' => ['required', 'integer', 'min:1'],
             'amount_paid' => ['required', 'integer', 'min:1', 'max:1000000000'],
             'occurred_at' => ['nullable', 'date'],
         ];
@@ -31,6 +31,9 @@ class StoreTransactionRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'final_total.required' => 'Total akhir wajib diisi.',
+            'final_total.integer' => 'Total akhir harus berupa bilangan bulat rupiah.',
+            'final_total.min' => 'Total akhir minimal Rp1.',
             'amount_paid.required' => 'Uang yang dibayarkan wajib diisi.',
             'amount_paid.integer' => 'Uang yang dibayarkan harus berupa bilangan bulat rupiah.',
             'amount_paid.min' => 'Uang yang dibayarkan minimal Rp1.',
