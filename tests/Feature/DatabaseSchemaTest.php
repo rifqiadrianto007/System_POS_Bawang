@@ -60,6 +60,7 @@ it('stores the business fields and relationships from the data model', function 
         'customer_category' => 'ecer',
         'subtotal' => 6900,
         'total' => 6900,
+        'amount_paid' => 6900,
         'payment_method' => 'cash',
         'occurred_at' => now(),
     ]);

@@ -10,6 +10,7 @@ use App\Models\Transaction;
 use App\Models\TransactionItem;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use LogicException;
 
 final class TransactionService
@@ -37,8 +38,10 @@ final class TransactionService
             $quote = $this->pricingService->quoteCart(
                 $attributes['customer_category'],
                 $attributes['items'],
-                $attributes['final_total'] ?? null,
             );
+            $payment = $this->applyPaymentRules($quote['subtotal'], $attributes);
+            $quote['discount'] = $payment['discount'];
+            $quote['total'] = $payment['final_total'];
 
             $transaction = Transaction::query()->create([
                 'invoice_no' => $this->nextInvoiceNumber($occurredAt),
@@ -49,10 +52,26 @@ final class TransactionService
                 'subtotal' => $quote['subtotal'],
                 'discount' => $quote['discount'],
                 'total' => $quote['total'],
+                'amount_paid' => $payment['amount_paid'],
                 'payment_method' => $attributes['payment_method'],
                 'status' => 'completed',
                 'occurred_at' => $occurredAt,
             ]);
+
+            if ($quote['discount'] > 0) {
+                AuditLog::query()->create([
+                    'user_id' => $cashierId,
+                    'action' => 'transaction.discount',
+                    'entity_type' => Transaction::class,
+                    'entity_id' => $transaction->id,
+                    'payload' => [
+                        'subtotal' => $quote['subtotal'],
+                        'final_total' => $payment['final_total'],
+                        'amount_paid' => $payment['amount_paid'],
+                        'discount' => $quote['discount'],
+                    ],
+                ]);
+            }
 
             foreach ($quote['items'] as $item) {
                 $transactionItem = $transaction->items()->create([
@@ -69,6 +88,48 @@ final class TransactionService
 
             return $transaction->load('items');
         });
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @return array{final_total: int, amount_paid: int, discount: int}
+     */
+    private function applyPaymentRules(int $subtotal, array $attributes): array
+    {
+        $finalTotal = ($attributes['final_total'] ?? null) === null
+            ? $subtotal
+            : (int) $attributes['final_total'];
+        $amountPaid = (int) $attributes['amount_paid'];
+
+        if ($finalTotal < 1) {
+            throw ValidationException::withMessages([
+                'final_total' => 'Total akhir minimal Rp1.',
+            ]);
+        }
+
+        if ($finalTotal > $subtotal) {
+            throw ValidationException::withMessages([
+                'final_total' => 'Total akhir tidak boleh melebihi subtotal.',
+            ]);
+        }
+
+        if ($amountPaid < $finalTotal) {
+            throw ValidationException::withMessages([
+                'amount_paid' => 'Uang yang dibayarkan tidak boleh kurang dari total akhir.',
+            ]);
+        }
+
+        if ($attributes['payment_method'] === 'qris' && $amountPaid !== $finalTotal) {
+            throw ValidationException::withMessages([
+                'amount_paid' => 'Pembayaran QRIS harus sama dengan total akhir.',
+            ]);
+        }
+
+        return [
+            'final_total' => $finalTotal,
+            'amount_paid' => $amountPaid,
+            'discount' => $subtotal - $finalTotal,
+        ];
     }
 
     private function allocateItem(TransactionItem $transactionItem, Carbon $occurredAt, int $createdBy): void

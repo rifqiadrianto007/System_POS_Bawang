@@ -74,6 +74,7 @@ function returnPayload(int $productId): array
         ],
         'payment_method' => 'cash',
         'final_total' => 144000,
+        'amount_paid' => 144000,
         'occurred_at' => '2026-10-22T10:00:00+07:00',
     ];
 }

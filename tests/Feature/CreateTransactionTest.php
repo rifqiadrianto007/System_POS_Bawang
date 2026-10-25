@@ -40,6 +40,7 @@ function transactionPayload(int $productId, string $clientUuid = '2f9c6a52-5f55-
         'customer_name' => 'Bu Sari',
         'payment_method' => 'cash',
         'final_total' => 40000,
+        'amount_paid' => 40000,
         'occurred_at' => '2026-10-19T12:00:00+07:00',
     ];
 }

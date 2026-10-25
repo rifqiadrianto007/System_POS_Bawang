@@ -23,7 +23,18 @@ class StoreTransactionRequest extends FormRequest
             'items.*.weight_kg' => ['required', 'string', 'regex:/^(?:0|[1-9]\d{0,3})(?:\.\d{1,3})?$/'],
             'payment_method' => ['required', 'in:cash,qris'],
             'final_total' => ['nullable', 'integer', 'min:0'],
+            'amount_paid' => ['required', 'integer', 'min:1', 'max:1000000000'],
             'occurred_at' => ['nullable', 'date'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'amount_paid.required' => 'Uang yang dibayarkan wajib diisi.',
+            'amount_paid.integer' => 'Uang yang dibayarkan harus berupa bilangan bulat rupiah.',
+            'amount_paid.min' => 'Uang yang dibayarkan minimal Rp1.',
+            'amount_paid.max' => 'Uang yang dibayarkan tidak boleh melebihi Rp1.000.000.000.',
         ];
     }
 }

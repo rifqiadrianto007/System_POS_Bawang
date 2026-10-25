@@ -87,6 +87,7 @@ function operationalReportTransaction(
         'subtotal' => $total,
         'discount' => 0,
         'total' => $total,
+        'amount_paid' => $total,
         'payment_method' => 'cash',
         'status' => $void ? 'void' : 'completed',
         'occurred_at' => $occurredAt,

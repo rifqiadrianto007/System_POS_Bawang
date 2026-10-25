@@ -35,6 +35,7 @@ function receiptTransaction(User $cashier, string $invoice = 'POS-261020-0001'):
         'subtotal' => 41300,
         'discount' => 1300,
         'total' => 40000,
+        'amount_paid' => 40000,
         'payment_method' => 'cash',
         'status' => 'completed',
         'occurred_at' => '2026-10-20 03:00:00',
