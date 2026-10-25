@@ -68,13 +68,13 @@ it('returns null payment and change for legacy transactions in detail and receip
         ->getJson("/api/v1/transactions/{$transaction->id}")
         ->assertOk()
         ->assertJsonPath('data.amount_paid', null)
-        ->assertJsonPath('data.change_amount', null);
+        ->assertJsonPath('data.change', null);
 
     $this->withToken($token)
         ->getJson("/api/v1/transactions/{$transaction->id}/receipt")
         ->assertOk()
         ->assertJsonPath('data.amount_paid', null)
-        ->assertJsonPath('data.change_amount', null);
+        ->assertJsonPath('data.change', null);
 });
 
 it('includes payment and computed change in a discounted overpaid receipt', function () {
@@ -92,7 +92,7 @@ it('includes payment and computed change in a discounted overpaid receipt', func
         ->assertJsonPath('data.amount_paid', 100000)
         ->assertJsonPath('data.total', 70000)
         ->assertJsonPath('data.discount', 5000)
-        ->assertJsonPath('data.change_amount', 30000);
+        ->assertJsonPath('data.change', 30000);
 });
 
 it('shows payment details to cashiers without exposing cogs in detail and receipt', function () {
@@ -104,7 +104,7 @@ it('shows payment details to cashiers without exposing cogs in detail and receip
         ->getJson("/api/v1/transactions/{$transaction->id}")
         ->assertOk()
         ->assertJsonPath('data.amount_paid', 100000)
-        ->assertJsonPath('data.change_amount', 25000)
+        ->assertJsonPath('data.change', 25000)
         ->assertJsonMissingPath('data.cogs')
         ->assertJsonMissingPath('data.items.0.cogs');
 
@@ -112,7 +112,7 @@ it('shows payment details to cashiers without exposing cogs in detail and receip
         ->getJson("/api/v1/transactions/{$transaction->id}/receipt")
         ->assertOk()
         ->assertJsonPath('data.amount_paid', 100000)
-        ->assertJsonPath('data.change_amount', 25000)
+        ->assertJsonPath('data.change', 25000)
         ->assertJsonMissingPath('data.cogs')
         ->assertJsonMissingPath('data.items.0.cogs');
 });
@@ -126,7 +126,7 @@ it('includes amount_paid and change in transaction history rows', function () {
         ->getJson('/api/v1/transactions')
         ->assertOk()
         ->assertJsonPath('data.0.amount_paid', 100000)
-        ->assertJsonPath('data.0.change_amount', 25000);
+        ->assertJsonPath('data.0.change', 25000);
 
     Carbon::setTestNow();
 });

@@ -5,8 +5,8 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 it('contains a valid Postman collection and local environment', function () {
-    $collectionPath = base_path('docs/postman/POS Bawang API v1.postman_collection.json');
-    $environmentPath = base_path('docs/postman/POS Bawang API v1.postman_environment.json');
+    $collectionPath = base_path('.postman/POS Bawang API v1.postman_collection.json');
+    $environmentPath = base_path('.postman/POS Bawang API v1.postman_environment.json');
 
     expect(is_file($collectionPath))->toBeTrue()
         ->and(is_file($environmentPath))->toBeTrue();
@@ -27,7 +27,7 @@ it('contains a valid Postman collection and local environment', function () {
 
 it('covers every active v1 route with a Postman request', function () {
     $collection = json_decode(
-        file_get_contents(base_path('docs/postman/POS Bawang API v1.postman_collection.json')),
+        file_get_contents(base_path('.postman/POS Bawang API v1.postman_collection.json')),
         true,
         flags: JSON_THROW_ON_ERROR
     );
