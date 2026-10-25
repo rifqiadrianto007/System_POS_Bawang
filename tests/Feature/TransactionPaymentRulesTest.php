@@ -65,7 +65,7 @@ function paymentRulesPayload(Product $product, array $overrides = []): array
         'customer_category' => 'ecer',
         'items' => [['product_id' => $product->id, 'weight_kg' => '3.000']],
         'payment_method' => 'cash',
-        'final_total' => null,
+        'final_total' => 75000,
         'amount_paid' => 75000,
     ], $overrides);
 }
@@ -107,10 +107,10 @@ it('accepts T-01, T-02, T-03, T-11, T-13, and T-14 under Rule B', function (
         ->and(StockMovement::query()->where('type', 'sale')->count())->toBe(1);
 })->with([
     'T-01' => ['T-01', 'cash', 75000, 75000, 75000, 0],
-    'T-02' => ['T-02', 'cash', null, 100000, 75000, 0],
+    'T-02' => ['T-02', 'cash', 75000, 100000, 75000, 0],
     'T-03' => ['T-03', 'cash', 70000, 70000, 70000, 5000],
     'T-11' => ['T-11', 'cash', 70000, 100000, 70000, 5000],
-    'T-13' => ['T-13', 'qris', null, 75000, 75000, 0],
+    'T-13' => ['T-13', 'qris', 75000, 75000, 75000, 0],
     'T-14' => ['T-14', 'qris', 70000, 70000, 70000, 5000],
 ]);
 
@@ -133,11 +133,11 @@ it('rejects T-04, T-05, T-06, T-10, and T-12 before transaction or stock writes 
         $errorField
     );
 })->with([
-    'T-04' => ['T-04', 'cash', null, 70000, 'amount_paid'],
+    'T-04' => ['T-04', 'cash', 75000, 70000, 'amount_paid'],
     'T-05' => ['T-05', 'cash', 75000, 70000, 'amount_paid'],
     'T-06' => ['T-06', 'cash', 80000, 80000, 'final_total'],
     'T-10' => ['T-10', 'cash', 0, 100000, 'final_total'],
-    'T-12' => ['T-12', 'qris', null, 80000, 'amount_paid'],
+    'T-12' => ['T-12', 'qris', 75000, 80000, 'amount_paid'],
 ]);
 
 it('writes T-21 discount audit payload only for a transaction with a discount', function () {

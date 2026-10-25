@@ -19,7 +19,7 @@ class TransactionReceiptResource extends JsonResource
             'discount' => $this->discount,
             'total' => $this->total,
             'amount_paid' => $this->amount_paid,
-            'change_amount' => $this->amount_paid === null ? null : $this->amount_paid - $this->total,
+            'change' => $this->amount_paid === null ? null : $this->amount_paid - $this->total,
             'payment_method' => $this->payment_method,
             'status' => $this->status,
         ];

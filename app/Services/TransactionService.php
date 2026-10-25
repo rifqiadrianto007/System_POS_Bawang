@@ -96,9 +96,7 @@ final class TransactionService
      */
     private function applyPaymentRules(int $subtotal, array $attributes): array
     {
-        $finalTotal = ($attributes['final_total'] ?? null) === null
-            ? $subtotal
-            : (int) $attributes['final_total'];
+        $finalTotal = (int) $attributes['final_total'];
         $amountPaid = (int) $attributes['amount_paid'];
 
         if ($finalTotal < 1) {
@@ -109,13 +107,13 @@ final class TransactionService
 
         if ($finalTotal > $subtotal) {
             throw ValidationException::withMessages([
-                'final_total' => 'Total akhir tidak boleh melebihi subtotal.',
+                'final_total' => 'Total akhir tidak boleh lebih besar dari subtotal.',
             ]);
         }
 
         if ($amountPaid < $finalTotal) {
             throw ValidationException::withMessages([
-                'amount_paid' => 'Uang yang dibayarkan tidak boleh kurang dari total akhir.',
+                'amount_paid' => 'Uang bayar kurang dari total akhir.',
             ]);
         }
 

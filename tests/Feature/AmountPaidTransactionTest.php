@@ -38,7 +38,7 @@ function amountPaidPayload(Product $product, string $uuid, array $overrides = []
             ['product_id' => $product->id, 'weight_kg' => '0.250'],
         ],
         'payment_method' => 'cash',
-        'final_total' => null,
+        'final_total' => 6900,
         'amount_paid' => 7500,
     ], $overrides);
 }
