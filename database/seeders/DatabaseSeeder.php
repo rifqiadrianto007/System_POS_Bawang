@@ -112,7 +112,7 @@ class DatabaseSeeder extends Seeder
                 'customer_name' => $number % 2 === 0 ? 'Pelanggan Demo' : null,
                 'items' => $items,
                 'payment_method' => 'cash',
-                'final_total' => $isDiscountedOverpayment ? 70000 : null,
+                'final_total' => $total,
                 'amount_paid' => $amountPaid,
                 'occurred_at' => Carbon::parse('2026-10-01 02:00:00', 'UTC')
                     ->addDays($number - 1)
