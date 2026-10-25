@@ -35,6 +35,7 @@ function voidTransaction(User $cashier): Transaction
         'subtotal' => 6900,
         'discount' => 0,
         'total' => 6900,
+        'amount_paid' => 6900,
         'payment_method' => 'cash',
         'status' => 'completed',
         'occurred_at' => '2026-10-20 03:00:00',

@@ -35,6 +35,7 @@ function transactionDetailExample(User $cashier): Transaction
         'subtotal' => 75000,
         'discount' => 5000,
         'total' => 70000,
+        'amount_paid' => 70000,
         'payment_method' => 'cash',
         'status' => 'completed',
         'occurred_at' => '2026-10-22 03:00:00',
