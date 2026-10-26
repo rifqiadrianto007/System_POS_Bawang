@@ -282,7 +282,8 @@ it('returns U-23 change on detail, list, and receipt without the old field name'
     $this->withToken($token)->getJson("/api/v1/transactions/{$transactionId}")
         ->assertOk()->assertJsonPath('data.change', 30000)->assertJsonMissingPath('data.change_amount');
     $this->withToken($token)->getJson('/api/v1/transactions')
-        ->assertOk()->assertJsonPath('data.0.change', 30000)->assertJsonMissingPath('data.0.change_amount');
+        ->assertOk()->assertJsonMissingPath('data.0.change')->assertJsonMissingPath('data.0.change_amount')
+        ->assertJsonMissingPath('data.0.amount_paid'); // R4 H-25 fixes the list row keys; payment amounts remain on detail and receipt.
     $this->withToken($token)->getJson("/api/v1/transactions/{$transactionId}/receipt")
         ->assertOk()->assertJsonPath('data.change', 30000)->assertJsonMissingPath('data.change_amount');
 
@@ -343,10 +344,13 @@ it('returns U-26 payment fields to cashiers without exposing cost fields', funct
     ]))->assertCreated();
     $transactionId = $created->json('data.id');
 
-    $this->withToken($token)->getJson('/api/v1/transactions')
-        ->assertOk()->assertJsonPath('data.0.amount_paid', 100000)->assertJsonPath('data.0.change', 25000)
+    $history = $this->withToken($token)->getJson('/api/v1/transactions')->assertOk()
+        ->assertJsonMissingPath('data.0.amount_paid')->assertJsonMissingPath('data.0.change')
         ->assertJsonMissingPath('data.0.cogs')->assertJsonMissingPath('data.0.items.0.cogs')
         ->assertJsonMissingPath('data.0.hpp')->assertJsonMissingPath('data.0.margin');
+    expect(array_keys($history->json('data.0')))->toBe([
+        'id', 'invoice_no', 'occurred_at', 'cashier_name', 'items_count', 'total_weight_kg', 'subtotal', 'discount', 'total', 'payment_method', 'status', 'customer_name',
+    ]); // R4 H-25 replaces the former payment fields in list rows; detail and receipt assertions below are unchanged.
     $this->withToken($token)->getJson("/api/v1/transactions/{$transactionId}")
         ->assertOk()->assertJsonPath('data.amount_paid', 100000)->assertJsonPath('data.change', 25000)
         ->assertJsonMissingPath('data.cogs')->assertJsonMissingPath('data.items.0.cogs')

@@ -4,8 +4,12 @@ use App\Models\Product;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 
 uses(RefreshDatabase::class);
+
+beforeEach(fn () => Carbon::setTestNow(Carbon::parse('2026-10-26 12:00:00', 'Asia/Jakarta')));
+afterEach(fn () => Carbon::setTestNow());
 
 function receiptUser(string $role, string $suffix): array
 {
@@ -38,7 +42,7 @@ function receiptTransaction(User $cashier, string $invoice = 'POS-261020-0001'):
         'amount_paid' => 40000,
         'payment_method' => 'cash',
         'status' => 'completed',
-        'occurred_at' => '2026-10-20 03:00:00',
+        'occurred_at' => '2026-10-26 03:00:00',
     ]);
 
     $transaction->items()->create([
@@ -117,14 +121,15 @@ it('allows the owner to retrieve any transaction receipt', function () {
         ->assertJsonPath('data.cogs', 0);
 });
 
-it('denies a cashier access to another cashier receipt', function () {
+it('allows a cashier to retrieve another cashier receipt within the shared history window', function () {
     [$cashier] = receiptUser('kasir', 'first');
     [, $otherToken] = receiptUser('kasir', 'second');
     $transaction = receiptTransaction($cashier, 'POS-261020-0003');
 
     $this->withToken($otherToken)
         ->getJson("/api/v1/transactions/{$transaction->id}/receipt")
-        ->assertForbidden();
+        ->assertOk()
+        ->assertJsonPath('data.invoice_no', 'POS-261020-0003');
 
     $this->withToken($otherToken)
         ->get("/api/v1/transactions/{$transaction->id}/receipt/print")

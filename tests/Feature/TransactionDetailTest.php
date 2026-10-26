@@ -4,8 +4,12 @@ use App\Models\Product;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 
 uses(RefreshDatabase::class);
+
+beforeEach(fn () => Carbon::setTestNow(Carbon::parse('2026-10-26 12:00:00', 'Asia/Jakarta')));
+afterEach(fn () => Carbon::setTestNow());
 
 function transactionDetailUser(string $role, string $suffix): array
 {
@@ -38,7 +42,7 @@ function transactionDetailExample(User $cashier): Transaction
         'amount_paid' => 70000,
         'payment_method' => 'cash',
         'status' => 'completed',
-        'occurred_at' => '2026-10-22 03:00:00',
+        'occurred_at' => '2026-10-26 03:00:00',
     ]);
 
     $transaction->items()->create([
@@ -84,14 +88,15 @@ it('allows an owner to see transaction detail including cogs', function () {
         ->assertJsonPath('data.items.0.cogs', 63750);
 });
 
-it('denies a cashier access to another cashier transaction detail', function () {
+it('allows a cashier to view another cashier transaction detail within the shared history window', function () {
     [$cashier] = transactionDetailUser('kasir', 'first');
     [, $otherCashierToken] = transactionDetailUser('kasir', 'second');
     $transaction = transactionDetailExample($cashier);
 
     $this->withToken($otherCashierToken)
         ->getJson("/api/v1/transactions/{$transaction->id}")
-        ->assertForbidden();
+        ->assertOk()
+        ->assertJsonPath('data.invoice_no', 'POS-261022-9001');
 });
 
 it('requires authentication for transaction detail', function () {

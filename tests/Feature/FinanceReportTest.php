@@ -9,6 +9,7 @@ use App\Models\Transaction;
 use App\Models\TransactionItem;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Filesystem\Filesystem;
 
 uses(RefreshDatabase::class);
 
@@ -152,4 +153,82 @@ it('validates finance report period parameters', function () {
         ->getJson('/api/v1/reports/finance?period=weekly')
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['period']);
+});
+
+it('H-42 assigns daily sales to the correct WIB business date', function () {
+    [$owner, $token] = reportUser('owner', 'h42-day-boundary');
+    foreach ([
+        ['POS-H42-0530', '2026-10-25 22:30:00', 30000],
+        ['POS-H42-2359', '2026-10-26 16:59:00', 40000],
+        ['POS-H42-NEXT', '2026-10-26 17:00:00', 90000],
+    ] as [$invoice, $occurredAt, $total]) {
+        Transaction::query()->create([
+            'invoice_no' => $invoice,
+            'client_uuid' => fake()->uuid(),
+            'cashier_id' => $owner->id,
+            'customer_category' => 'ecer',
+            'subtotal' => $total,
+            'discount' => 0,
+            'total' => $total,
+            'amount_paid' => $total,
+            'payment_method' => 'cash',
+            'status' => 'completed',
+            'occurred_at' => $occurredAt,
+        ]);
+    }
+
+    $this->withToken($token)->getJson('/api/v1/reports/finance?period=daily&date=2026-10-26')
+        ->assertOk()->assertJsonPath('data.net_sales', 70000);
+    $this->withToken($token)->getJson('/api/v1/reports/finance?period=daily&date=2026-10-27')
+        ->assertOk()->assertJsonPath('data.net_sales', 90000);
+});
+
+it('H-43 assigns transactions at the October-November WIB boundary to the correct month', function () {
+    [$owner, $token] = reportUser('owner', 'h43-month-boundary');
+    foreach ([
+        ['POS-H43-OCT', '2026-10-31 16:59:00', 100000],
+        ['POS-H43-NOV', '2026-10-31 17:00:00', 200000],
+    ] as [$invoice, $occurredAt, $total]) {
+        Transaction::query()->create([
+            'invoice_no' => $invoice,
+            'client_uuid' => fake()->uuid(),
+            'cashier_id' => $owner->id,
+            'customer_category' => 'ecer',
+            'subtotal' => $total,
+            'discount' => 0,
+            'total' => $total,
+            'amount_paid' => $total,
+            'payment_method' => 'cash',
+            'status' => 'completed',
+            'occurred_at' => $occurredAt,
+        ]);
+    }
+
+    $this->withToken($token)->getJson('/api/v1/reports/finance?period=monthly&month=2026-10')
+        ->assertOk()->assertJsonPath('data.net_sales', 100000);
+    $this->withToken($token)->getJson('/api/v1/reports/finance?period=monthly&month=2026-11')
+        ->assertOk()->assertJsonPath('data.net_sales', 200000);
+});
+
+it('H-44 prevents date extraction filters on UTC timestamp columns in application code', function () {
+    $filesystem = new Filesystem();
+    $violations = [];
+    $patterns = [
+        '/whereDate\s*\(\s*[\'\"](?:[a-z_]+\.)?(?:occurred_at|counted_at)[\'\"]/i',
+        '/\bDATE\s*\(\s*(?:[a-z_]+\.)?(?:occurred_at|counted_at)\s*\)/i',
+    ];
+
+    foreach ($filesystem->allFiles(app_path()) as $file) {
+        if ($file->getExtension() !== 'php') {
+            continue;
+        }
+        $contents = $filesystem->get($file->getPathname());
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $contents) === 1) {
+                $violations[] = $file->getRelativePathname();
+            }
+        }
+    }
+
+    expect($violations)->toBeEmpty();
 });
