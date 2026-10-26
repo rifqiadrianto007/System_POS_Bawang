@@ -19,7 +19,11 @@ class TransactionController extends Controller
     public function store(StoreTransactionRequest $request, TransactionService $transactionService): JsonResponse
     {
         try {
-            $transaction = $transactionService->create($request->validated(), $request->user()->id);
+            $transaction = $transactionService->create(
+                $request->validated(),
+                $request->user()->id,
+                $request->user()->role === 'owner'
+            );
         } catch (InvalidArgumentException $exception) {
             return response()->json(['message' => $exception->getMessage()], 422);
         }
@@ -52,7 +56,7 @@ class TransactionController extends Controller
         TransactionReceiptService $receiptService
     ): TransactionReceiptResource {
         return new TransactionReceiptResource(
-            $receiptService->get($transaction, request()->user())
+            $receiptService->get($transaction, request()->user(), true)
         );
     }
 
@@ -61,7 +65,7 @@ class TransactionController extends Controller
         TransactionReceiptService $receiptService
     ): TransactionResource {
         return new TransactionResource(
-            $receiptService->get($transaction, request()->user())
+            $receiptService->get($transaction, request()->user(), true)
         );
     }
 
