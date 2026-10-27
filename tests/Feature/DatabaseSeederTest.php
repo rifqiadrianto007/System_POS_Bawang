@@ -43,4 +43,8 @@ it('seeds twenty transactions with overpayments, one discounted overpayment, and
         ->and($discounted->amount_paid)->toBe(100000)
         ->and((int) $transactions->where('status', 'completed')->sum('total'))->toBe(182600)
         ->and($transactions->where('status', 'void'))->toHaveCount(1);
+
+    expect($transactions[0]->occurred_at->copy()->utc()->format('Y-m-d H:i:s'))->toBe('2026-10-25 22:30:00')
+        ->and($transactions[1]->occurred_at->copy()->utc()->format('Y-m-d H:i:s'))->toBe('2026-10-26 16:59:00')
+        ->and($transactions[2]->occurred_at->copy()->utc()->format('Y-m-d H:i:s'))->toBe('2026-10-26 17:00:00');
 });

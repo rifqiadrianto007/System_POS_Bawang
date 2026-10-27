@@ -61,7 +61,7 @@ function amountPaidPresentationItem(Transaction $transaction): void
 
 it('returns null payment and change for legacy transactions in detail and receipt', function () {
     [$cashier, $token] = amountPaidPresentationUser('kasir', 'legacy');
-    $transaction = amountPaidPresentationTransaction($cashier, ['amount_paid' => null]);
+    $transaction = amountPaidPresentationTransaction($cashier, ['amount_paid' => null, 'occurred_at' => '2026-10-26 03:00:00']);
     amountPaidPresentationItem($transaction);
 
     $this->withToken($token)
@@ -83,6 +83,7 @@ it('includes payment and computed change in a discounted overpaid receipt', func
         'discount' => 5000,
         'total' => 70000,
         'amount_paid' => 100000,
+        'occurred_at' => '2026-10-26 03:00:00',
     ]);
     amountPaidPresentationItem($transaction);
 
@@ -97,7 +98,7 @@ it('includes payment and computed change in a discounted overpaid receipt', func
 
 it('shows payment details to cashiers without exposing cogs in detail and receipt', function () {
     [$cashier, $token] = amountPaidPresentationUser('kasir', 'role');
-    $transaction = amountPaidPresentationTransaction($cashier, ['amount_paid' => 100000]);
+    $transaction = amountPaidPresentationTransaction($cashier, ['amount_paid' => 100000, 'occurred_at' => '2026-10-26 03:00:00']);
     amountPaidPresentationItem($transaction);
 
     $this->withToken($token)
@@ -117,16 +118,22 @@ it('shows payment details to cashiers without exposing cogs in detail and receip
         ->assertJsonMissingPath('data.items.0.cogs');
 });
 
-it('includes amount_paid and change in transaction history rows', function () {
+it('keeps transaction history rows to the documented cashier list fields', function () {
     [$cashier, $token] = amountPaidPresentationUser('kasir', 'history');
     Carbon::setTestNow(Carbon::parse('2026-10-24 10:00:00', 'Asia/Jakarta'));
     $transaction = amountPaidPresentationTransaction($cashier, ['amount_paid' => 100000]);
 
-    $this->withToken($token)
+    $history = $this->withToken($token)
         ->getJson('/api/v1/transactions')
         ->assertOk()
-        ->assertJsonPath('data.0.amount_paid', 100000)
-        ->assertJsonPath('data.0.change', 25000);
+        ->assertJsonMissingPath('data.0.amount_paid')
+        ->assertJsonMissingPath('data.0.change')
+        ->assertJsonMissingPath('data.0.cogs');
+
+    // R4 H-25 defines an exact list row shape; payment fields remain on detail and receipt.
+    expect(array_keys($history->json('data.0')))->toBe([
+        'id', 'invoice_no', 'occurred_at', 'cashier_name', 'items_count', 'total_weight_kg', 'subtotal', 'discount', 'total', 'payment_method', 'status', 'customer_name',
+    ]);
 
     Carbon::setTestNow();
 });

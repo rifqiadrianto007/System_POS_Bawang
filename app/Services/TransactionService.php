@@ -20,12 +20,12 @@ final class TransactionService
     /**
      * @param  array<string, mixed>  $attributes
      */
-    public function create(array $attributes, int $cashierId): Transaction
+    public function create(array $attributes, int $cashierId, bool $includeCosts = true): Transaction
     {
-        return DB::transaction(function () use ($attributes, $cashierId): Transaction {
+        return DB::transaction(function () use ($attributes, $cashierId, $includeCosts): Transaction {
             $existing = Transaction::query()
                 ->where('client_uuid', $attributes['client_uuid'])
-                ->with('items')
+                ->with($this->transactionItemResponseRelation($includeCosts))
                 ->first();
 
             if ($existing !== null) {
@@ -86,8 +86,22 @@ final class TransactionService
                 $this->allocateItem($transactionItem, $occurredAt, $cashierId);
             }
 
-            return $transaction->load('items');
+            return $transaction->load($this->transactionItemResponseRelation($includeCosts));
         });
+    }
+
+    /** @return array<string, mixed> */
+    private function transactionItemResponseRelation(bool $includeCosts): array
+    {
+        if ($includeCosts) {
+            return ['items'];
+        }
+
+        return [
+            'items' => static fn ($query) => $query->select([
+                'id', 'transaction_id', 'product_id', 'product_name', 'weight_kg', 'price_tier', 'price_per_kg', 'line_total',
+            ]),
+        ];
     }
 
     /**

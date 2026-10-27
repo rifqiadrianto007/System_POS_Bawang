@@ -9,6 +9,7 @@ use App\Models\StockCount;
 use App\Models\StockMovement;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
+use App\Support\BusinessDay;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -21,20 +22,22 @@ final class ReportService
     public function finance(array $filters): array
     {
         [$start, $end, $periodLabel, $localDates] = $this->periodBounds($filters);
-        $transactions = Transaction::query()->whereBetween('occurred_at', [$start, $end]);
+        $transactions = Transaction::query()
+            ->where('occurred_at', '>=', $start)
+            ->where('occurred_at', '<', $end);
         $completedIds = (clone $transactions)->where('status', 'completed')->pluck('id');
         $netSales = (clone $transactions)->where('status', 'completed')->sum('total');
         $cogs = TransactionItem::query()->whereIn('transaction_id', $completedIds)->sum('cogs');
-        $displayShrinkValue = StockCount::query()->whereBetween('counted_at', [$start, $end])->sum('loss_value');
+        $displayShrinkValue = StockCount::query()
+            ->where('counted_at', '>=', $start)
+            ->where('counted_at', '<', $end)
+            ->sum('loss_value');
         $expenseQuery = Expense::query();
         $purchaseQuery = Purchase::query()->where('status', 'finalized');
-        if ($filters['period'] === 'daily') {
-            $expenseQuery->whereDate('spent_at', $localDates['start']);
-            $purchaseQuery->whereDate('purchased_at', $localDates['start']);
-        } else {
-            $expenseQuery->whereBetween('spent_at', [$localDates['start'], $localDates['end']]);
-            $purchaseQuery->whereBetween('purchased_at', [$localDates['start'], $localDates['end']]);
-        }
+        $expenseQuery->where('spent_at', '>=', $localDates['start'])
+            ->where('spent_at', '<', $localDates['end']);
+        $purchaseQuery->where('purchased_at', '>=', $localDates['start'])
+            ->where('purchased_at', '<', $localDates['end']);
         $operatingExpenses = $expenseQuery->sum('amount');
         $purchasesTotal = (clone $purchaseQuery)->sum('total_cost');
         $cleaningShrink = 0;
@@ -75,13 +78,15 @@ final class ReportService
             ->join('transactions', 'transactions.id', '=', 'transaction_items.transaction_id')
             ->join('products', 'products.id', '=', 'transaction_items.product_id')
             ->where('transactions.status', 'completed')
-            ->whereBetween('transactions.occurred_at', [$start, $end])
+            ->where('transactions.occurred_at', '>=', $start)
+            ->where('transactions.occurred_at', '<', $end)
             ->get();
         $shortfalls = DB::table('sale_allocations')
             ->join('transaction_items', 'transaction_items.id', '=', 'sale_allocations.transaction_item_id')
             ->join('transactions', 'transactions.id', '=', 'transaction_items.transaction_id')
             ->where('transactions.status', 'completed')
-            ->whereBetween('transactions.occurred_at', [$start, $end])
+            ->where('transactions.occurred_at', '>=', $start)
+            ->where('transactions.occurred_at', '<', $end)
             ->where('sale_allocations.is_shortfall', true)
             ->select('transaction_items.product_id', DB::raw('count(*) as total'))
             ->groupBy('transaction_items.product_id')
@@ -112,10 +117,19 @@ final class ReportService
     /** @return array<string, mixed> */
     public function stock(array $filters): array
     {
-        $date = (string) ($filters['date'] ?? now('Asia/Jakarta')->toDateString());
-        [$start, $end] = $this->dateBounds($date, $date);
-        $movements = StockMovement::query()->whereBetween('occurred_at', [$start, $end])->get();
-        $counts = StockCount::query()->whereBetween('counted_at', [$start, $end])->get();
+        $today = BusinessDay::today();
+        $date = (string) ($filters['date'] ?? $today[0]->copy()->setTimezone('Asia/Jakarta')->toDateString());
+        [$start, $end] = BusinessDay::forDate($date);
+        $localStart = $start->copy()->setTimezone('Asia/Jakarta')->toDateString();
+        $localEnd = $end->copy()->setTimezone('Asia/Jakarta')->toDateString();
+        $movements = StockMovement::query()
+            ->where('occurred_at', '>=', $start)
+            ->where('occurred_at', '<', $end)
+            ->get();
+        $counts = StockCount::query()
+            ->where('counted_at', '>=', $start)
+            ->where('counted_at', '<', $end)
+            ->get();
         $products = Product::query()->with('stockMovements')->orderBy('name')->get();
         $summary = [
             'received_weight_kg' => 0,
@@ -126,7 +140,9 @@ final class ReportService
             'display_shrink_value' => 0,
         ];
         $cleaningShrink = 0;
-        foreach (Purchase::query()->where('status', 'finalized')->whereDate('purchased_at', $date)
+        foreach (Purchase::query()->where('status', 'finalized')
+            ->where('purchased_at', '>=', $localStart)
+            ->where('purchased_at', '<', $localEnd)
             ->get(['gross_weight_kg', 'clean_weight_kg']) as $purchase) {
             $cleaningShrink += $this->toMilli((string) $purchase->gross_weight_kg)
                 - $this->toMilli((string) $purchase->clean_weight_kg);
@@ -187,7 +203,8 @@ final class ReportService
             ->selectRaw('sum(case when status = ? then total else 0 end) as revenue', ['completed'])
             ->selectRaw('sum(case when status = ? then 1 else 0 end) as void_count', ['void'])
             ->with('cashier:id,name')
-            ->whereBetween('occurred_at', [$start, $end])
+            ->where('occurred_at', '>=', $start)
+            ->where('occurred_at', '<', $end)
             ->groupBy('cashier_id')
             ->orderBy('cashier_id')
             ->get()
@@ -204,22 +221,25 @@ final class ReportService
     private function periodBounds(array $filters): array
     {
         if ($filters['period'] === 'daily') {
-            $date = Carbon::createFromFormat('Y-m-d', (string) $filters['date'], 'Asia/Jakarta');
+            [$start, $end] = BusinessDay::forDate((string) $filters['date']);
+            $date = $start->copy()->setTimezone('Asia/Jakarta')->toDateString();
 
-            return [$date->copy()->startOfDay()->utc(), $date->copy()->endOfDay()->utc(), ['key' => 'date', 'value' => $date->toDateString()], ['start' => $date->toDateString(), 'end' => $date->toDateString()]];
+            $nextDate = $end->copy()->setTimezone('Asia/Jakarta')->toDateString();
+
+            return [$start, $end, ['key' => 'date', 'value' => $date], ['start' => $date, 'end' => $nextDate]];
         }
-        $month = Carbon::createFromFormat('Y-m', (string) $filters['month'], 'Asia/Jakarta');
+        $month = (string) $filters['month'];
+        [$start, $end] = BusinessDay::month($month);
+        $firstDate = $start->copy()->setTimezone('Asia/Jakarta')->toDateString();
+        $endDateExclusive = $end->copy()->setTimezone('Asia/Jakarta')->toDateString();
 
-        return [$month->copy()->startOfMonth()->startOfDay()->utc(), $month->copy()->endOfMonth()->endOfDay()->utc(), ['key' => 'month', 'value' => $month->format('Y-m')], ['start' => $month->copy()->startOfMonth()->toDateString(), 'end' => $month->copy()->endOfMonth()->toDateString()]];
+        return [$start, $end, ['key' => 'month', 'value' => $month], ['start' => $firstDate, 'end' => $endDateExclusive]];
     }
 
     /** @return array{0: Carbon, 1: Carbon} */
     private function dateBounds(string $from, string $to): array
     {
-        $start = Carbon::createFromFormat('Y-m-d', $from, 'Asia/Jakarta')->startOfDay();
-        $end = Carbon::createFromFormat('Y-m-d', $to, 'Asia/Jakarta')->endOfDay();
-
-        return [$start->copy()->utc(), $end->copy()->utc()];
+        return BusinessDay::between($from, $to);
     }
 
     private function sumMovementWeights(iterable $movements): int

@@ -14,6 +14,7 @@ class TransactionResource extends JsonResource
             'invoice_no' => $this->invoice_no,
             'client_uuid' => $this->client_uuid,
             'cashier_id' => $this->cashier_id,
+            'cashier_name' => $this->whenLoaded('cashier', fn () => $this->cashier?->name),
             'customer_category' => $this->customer_category,
             'customer_name' => $this->customer_name,
             'subtotal' => $this->subtotal,

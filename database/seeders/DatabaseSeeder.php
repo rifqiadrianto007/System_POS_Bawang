@@ -105,6 +105,14 @@ class DatabaseSeeder extends Seeder
             $subtotal = $pricingService->quoteCart($category, $items)['subtotal'];
             $total = $isDiscountedOverpayment ? 70000 : $subtotal;
             $amountPaid = $isDiscountedOverpayment || $number % 3 === 0 ? $total + 30000 : $total;
+            $occurredAt = match ($number) {
+                1 => Carbon::parse('2026-10-25 22:30:00', 'UTC'), // 05:30 WIB
+                2 => Carbon::parse('2026-10-26 16:59:00', 'UTC'), // 23:59 WIB
+                3 => Carbon::parse('2026-10-26 17:00:00', 'UTC'), // 00:00 WIB on the next day
+                default => Carbon::parse('2026-10-01 02:00:00', 'UTC')
+                    ->addDays($number - 1)
+                    ->setTime(2 + ($number % 12), 0),
+            };
 
             $transaction = $transactionService->create([
                 'client_uuid' => sprintf('a0000000-0000-4000-8000-%012d', $number),
@@ -114,10 +122,7 @@ class DatabaseSeeder extends Seeder
                 'payment_method' => 'cash',
                 'final_total' => $total,
                 'amount_paid' => $amountPaid,
-                'occurred_at' => Carbon::parse('2026-10-01 02:00:00', 'UTC')
-                    ->addDays($number - 1)
-                    ->setTime(2 + ($number % 12), 0)
-                    ->toIso8601String(),
+                'occurred_at' => $occurredAt->toIso8601String(),
             ], $cashier->id);
 
             if ($number === 20) {
