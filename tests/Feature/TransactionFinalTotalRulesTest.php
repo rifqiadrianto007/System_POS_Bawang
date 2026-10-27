@@ -306,6 +306,7 @@ it('returns U-24 payment fields from receipt identical to the creation response'
 
 it('returns U-25 null amount_paid and change for legacy transactions', function () {
     [$cashier, $token] = finalTotalTestSetup('u25');
+    Carbon::setTestNow(Carbon::parse('2026-10-26 10:00:00', 'Asia/Jakarta'));
     $transaction = Transaction::query()->create([
         'invoice_no' => 'POS-261025-0025',
         'client_uuid' => '25000000-0000-4000-8000-000000000025',
