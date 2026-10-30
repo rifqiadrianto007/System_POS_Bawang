@@ -5,6 +5,8 @@ namespace Database\Seeders;
 use App\Models\Product;
 use App\Models\Supplier;
 use App\Models\User;
+use App\Services\ExpenseService;
+use App\Services\PurchaseService;
 use App\Services\TransactionService;
 use App\Services\PricingService;
 use Carbon\Carbon;
@@ -79,7 +81,7 @@ class DatabaseSeeder extends Seeder
             'is_active' => true,
         ]);
 
-        Supplier::query()->create([
+        $redSupplier = Supplier::query()->create([
             'name' => 'Supplier Bawang Merah',
             'phone' => '081234567801',
             'note' => 'Pemasok bawang merah',
@@ -93,7 +95,53 @@ class DatabaseSeeder extends Seeder
 
         $transactionService = app(TransactionService::class);
         $pricingService = app(PricingService::class);
+        $purchaseService = app(PurchaseService::class);
+        $expenseService = app(ExpenseService::class);
         $products = [$redA, $redB, $redC, $whiteA];
+
+        $finalPurchase = $purchaseService->create([
+            'supplier_id' => $redSupplier->id,
+            'purchased_at' => '2026-10-01',
+            'gross_weight_kg' => '100.000',
+            'price_per_kg' => 17000,
+            'notes' => 'Batch contoh laporan: 100 kg x Rp17.000.',
+        ], $owner->id);
+        foreach ([[$redA, '40.000'], [$redB, '25.000'], [$whiteA, '15.000']] as [$product, $weight]) {
+            $purchaseService->addLot($finalPurchase, [
+                'product_id' => $product->id,
+                'clean_weight_kg' => $weight,
+                'cleaned_at' => '2026-10-01',
+            ], $owner->id);
+        }
+        $purchaseService->finalize($finalPurchase, $owner->id);
+
+        $openPurchase = $purchaseService->create([
+            'supplier_id' => $redSupplier->id,
+            'purchased_at' => '2026-10-26',
+            'gross_weight_kg' => '20.000',
+            'price_per_kg' => 15000,
+            'notes' => 'Kulak open untuk contoh perubahan.',
+        ], $owner->id);
+        $lotPurchase = $purchaseService->create([
+            'supplier_id' => $redSupplier->id,
+            'purchased_at' => '2026-10-26',
+            'gross_weight_kg' => '10.000',
+            'price_per_kg' => 14000,
+            'notes' => 'Kulak open dengan lot untuk contoh finalisasi.',
+        ], $owner->id);
+        $purchaseService->addLot($lotPurchase, [
+            'product_id' => $redC->id,
+            'clean_weight_kg' => '5.000',
+            'cleaned_at' => '2026-10-26',
+        ], $owner->id);
+
+        foreach ([
+            ['name' => 'Plastik kemasan demo', 'category' => 'kemasan', 'amount' => 35000, 'spent_at' => '2026-10-01'],
+            ['name' => 'Transport kulak demo', 'category' => 'transportasi', 'amount' => 50000, 'spent_at' => '2026-10-15'],
+            ['name' => 'Listrik toko demo', 'category' => 'listrik_air', 'amount' => 60000, 'spent_at' => '2026-10-26'],
+        ] as $expense) {
+            $expenseService->create($expense, $owner->id);
+        }
 
         for ($number = 1; $number <= 20; $number++) {
             $product = $products[($number - 1) % count($products)];
