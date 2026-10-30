@@ -34,7 +34,10 @@ Route::prefix('v1')->group(function (): void {
             Route::put('/suppliers/{supplier}', [SupplierController::class, 'update']);
             Route::get('/purchases', [PurchaseController::class, 'index']);
             Route::post('/purchases', [PurchaseController::class, 'store']);
+            Route::put('/purchases/{purchase}', [PurchaseController::class, 'update']);
+            Route::delete('/purchases/{purchase}', [PurchaseController::class, 'destroy']);
             Route::post('/purchases/{purchase}/lots', [PurchaseController::class, 'addLot']);
+            Route::put('/purchases/{purchase}/lots/{lot}', [PurchaseController::class, 'updateLot']);
             Route::delete('/purchases/{purchase}/lots/{lot}', [PurchaseController::class, 'deleteLot']);
             Route::post('/purchases/{purchase}/finalize', [PurchaseController::class, 'finalize']);
             Route::get('/purchases/{purchase}', [PurchaseController::class, 'show']);
@@ -42,8 +45,11 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/stock-counts', [StockCountController::class, 'store']);
             Route::get('/stock-counts', [StockCountController::class, 'index']);
             Route::get('/expenses', [ExpenseController::class, 'index']);
+            Route::get('/expenses/suggestions', [ExpenseController::class, 'suggestions']);
+            Route::get('/expenses/categories', [ExpenseController::class, 'categories']);
             Route::post('/expenses', [ExpenseController::class, 'store']);
             Route::put('/expenses/{expense}', [ExpenseController::class, 'update']);
+            Route::delete('/expenses/{expense}', [ExpenseController::class, 'destroy']);
             Route::get('/reports/finance', [ReportController::class, 'finance']);
             Route::get('/reports/sales-by-product', [ReportController::class, 'salesByProduct']);
             Route::get('/reports/stock', [ReportController::class, 'stock']);
