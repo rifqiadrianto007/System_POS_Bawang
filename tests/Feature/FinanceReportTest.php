@@ -100,6 +100,7 @@ function seedDocumentedFinanceExample(User $owner): void
 
     Expense::query()->create([
         'name' => 'Operasional',
+        'category' => 'lainnya',
         'amount' => 50000,
         'spent_at' => '2026-10-22',
         'created_by' => $owner->id,
@@ -216,6 +217,8 @@ it('H-44 prevents date extraction filters on UTC timestamp columns in applicatio
     $patterns = [
         '/whereDate\s*\(\s*[\'\"](?:[a-z_]+\.)?(?:occurred_at|counted_at)[\'\"]/i',
         '/\bDATE\s*\(\s*(?:[a-z_]+\.)?(?:occurred_at|counted_at)\s*\)/i',
+        '/\bDATE\s*\(\s*DATE_(?:ADD|SUB)\s*\([^)]*(?:occurred_at|counted_at)/i',
+        '/\bDATE\s*\(\s*DATETIME\s*\([^)]*(?:occurred_at|counted_at)/i',
     ];
 
     foreach ($filesystem->allFiles(app_path()) as $file) {
@@ -225,7 +228,10 @@ it('H-44 prevents date extraction filters on UTC timestamp columns in applicatio
         $contents = $filesystem->get($file->getPathname());
         foreach ($patterns as $pattern) {
             if (preg_match($pattern, $contents) === 1) {
-                $violations[] = $file->getRelativePathname();
+                if ($file->getRelativePathname() !== 'Support/BusinessDay.php'
+                    || !str_contains($contents, 'public static function localDateExpression')) {
+                    $violations[] = $file->getRelativePathname();
+                }
             }
         }
     }
