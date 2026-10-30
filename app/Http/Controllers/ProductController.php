@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreProductRequest;
+use App\Http\Requests\ProductIndexRequest;
 use App\Http\Requests\UpdateProductRequest;
 use App\Http\Requests\UpdateProductStatusRequest;
 use App\Http\Resources\ProductPriceHistoryResource;
@@ -10,21 +11,18 @@ use App\Http\Resources\ProductResource;
 use App\Models\AuditLog;
 use App\Models\Product;
 use App\Models\ProductPriceHistory;
+use App\Services\ProductCatalogService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
 
 class ProductController extends Controller
 {
-    public function index(): AnonymousResourceCollection
+    public function index(ProductIndexRequest $request, ProductCatalogService $productCatalogService): AnonymousResourceCollection
     {
-        $query = Product::query()->orderBy('name');
-
-        if (auth()->user()->role === 'kasir') {
-            $query->where('is_active', true);
-        }
-
-        return ProductResource::collection($query->get());
+        return ProductResource::collection(
+            $productCatalogService->list($request->validated(), $request->user()->role)
+        );
     }
 
     public function store(StoreProductRequest $request): JsonResponse

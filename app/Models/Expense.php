@@ -4,10 +4,13 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Expense extends Model
 {
-    protected $fillable = ['name', 'amount', 'spent_at', 'notes', 'created_by'];
+    use SoftDeletes;
+
+    protected $fillable = ['name', 'category', 'amount', 'spent_at', 'notes', 'created_by', 'deleted_by'];
 
     protected function casts(): array
     {
@@ -20,5 +23,10 @@ class Expense extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function deleter(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'deleted_by');
     }
 }

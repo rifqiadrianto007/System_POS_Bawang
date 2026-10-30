@@ -7,8 +7,10 @@ use App\Models\Purchase;
 use App\Models\StockLot;
 use App\Models\StockMovement;
 use App\Models\Supplier;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use LogicException;
+use Illuminate\Validation\ValidationException;
 
 final class PurchaseService
 {
@@ -33,7 +35,68 @@ final class PurchaseService
                 'total_cost' => $purchase->total_cost,
             ]);
 
-            return $purchase->load('supplier');
+            return $this->prepareResponse($purchase);
+        });
+    }
+
+    /** @return Collection<int, Purchase> */
+    public function list(): Collection
+    {
+        return Purchase::query()->with(['supplier', 'stockLots'])->latest('purchased_at')->get()
+            ->map(fn (Purchase $purchase): Purchase => $this->prepareResponse($purchase));
+    }
+
+    public function present(Purchase $purchase): Purchase
+    {
+        return $this->prepareResponse($purchase);
+    }
+
+    /** @param array<string, mixed> $attributes */
+    public function update(Purchase $purchase, array $attributes, int $ownerId): Purchase
+    {
+        return DB::transaction(function () use ($purchase, $attributes, $ownerId): Purchase {
+            $purchase = Purchase::query()->lockForUpdate()->with('stockLots')->findOrFail($purchase->id);
+
+            if ($purchase->status === 'finalized' && array_diff(array_keys($attributes), ['notes']) !== []) {
+                throw new LogicException('Kulak yang sudah final tidak dapat diubah.');
+            }
+
+            $grossWeight = (string) ($attributes['gross_weight_kg'] ?? $purchase->gross_weight_kg);
+            if ($this->lotsTotalMilli($purchase->stockLots) > $this->toMilliKilograms($grossWeight)) {
+                throw ValidationException::withMessages([
+                    'gross_weight_kg' => 'Jumlah berat lot tidak boleh melebihi berat kotor kulak.',
+                ]);
+            }
+
+            $before = $purchase->only(['supplier_id', 'purchased_at', 'gross_weight_kg', 'price_per_kg', 'total_cost', 'notes']);
+            $values = $attributes;
+            if ($purchase->status === 'open') {
+                $price = (int) ($attributes['price_per_kg'] ?? $purchase->price_per_kg);
+                $values['total_cost'] = $this->calculateTotalCost($grossWeight, $price);
+            }
+            $purchase->update($values);
+
+            $this->recordAudit('purchase.updated', Purchase::class, $purchase->id, $ownerId, [
+                'before' => $before,
+                'after' => $purchase->fresh()->only(['supplier_id', 'purchased_at', 'gross_weight_kg', 'price_per_kg', 'total_cost', 'notes']),
+            ]);
+
+            return $this->prepareResponse($purchase->fresh());
+        });
+    }
+
+    public function delete(Purchase $purchase, int $ownerId): void
+    {
+        DB::transaction(function () use ($purchase, $ownerId): void {
+            $purchase = Purchase::query()->lockForUpdate()->with('stockLots')->findOrFail($purchase->id);
+            if ($purchase->status !== 'open') {
+                throw new LogicException('Kulak yang sudah final tidak dapat diubah.');
+            }
+
+            $payload = $purchase->only(['supplier_id', 'purchased_at', 'gross_weight_kg', 'price_per_kg', 'total_cost', 'notes']);
+            $this->recordAudit('purchase.deleted', Purchase::class, $purchase->id, $ownerId, $payload);
+            $purchase->stockLots()->delete();
+            $purchase->delete();
         });
     }
 
@@ -59,8 +122,10 @@ final class PurchaseService
             $purchase = Purchase::query()->lockForUpdate()->findOrFail($purchase->id);
 
             if ($purchase->status !== 'open') {
-                throw new LogicException('Lot tidak dapat diubah setelah pembelian difinalkan.');
+                throw new LogicException('Kulak yang sudah final tidak dapat diubah.');
             }
+
+            $this->assertLotTotalWithinGross($purchase, (string) $attributes['clean_weight_kg']);
 
             $lot = $purchase->stockLots()->create($attributes);
             $this->recordAudit('purchase.lot_added', StockLot::class, $lot->id, $ownerId, [
@@ -73,13 +138,36 @@ final class PurchaseService
         });
     }
 
+    /** @param array<string, mixed> $attributes */
+    public function updateLot(Purchase $purchase, StockLot $lot, array $attributes, int $ownerId): StockLot
+    {
+        return DB::transaction(function () use ($purchase, $lot, $attributes, $ownerId): StockLot {
+            $purchase = Purchase::query()->lockForUpdate()->findOrFail($purchase->id);
+            $lot = StockLot::query()->lockForUpdate()->findOrFail($lot->id);
+            if ($purchase->status !== 'open' || $lot->purchase_id !== $purchase->id) {
+                throw new LogicException('Kulak yang sudah final tidak dapat diubah.');
+            }
+
+            $this->assertLotTotalWithinGross($purchase, (string) $attributes['clean_weight_kg'], $lot->id);
+            $before = $lot->only(['product_id', 'clean_weight_kg', 'cleaned_at', 'notes']);
+            $lot->update($attributes);
+            $this->recordAudit('purchase.lot_updated', StockLot::class, $lot->id, $ownerId, [
+                'purchase_id' => $purchase->id,
+                'before' => $before,
+                'after' => $lot->fresh()->only(['product_id', 'clean_weight_kg', 'cleaned_at', 'notes']),
+            ]);
+
+            return $lot->load('product');
+        });
+    }
+
     public function deleteLot(Purchase $purchase, StockLot $lot, int $ownerId): void
     {
         DB::transaction(function () use ($purchase, $lot, $ownerId): void {
             $purchase = Purchase::query()->lockForUpdate()->findOrFail($purchase->id);
 
             if ($purchase->status !== 'open' || $lot->purchase_id !== $purchase->id) {
-                throw new LogicException('Lot tidak dapat dihapus setelah pembelian difinalkan.');
+                throw new LogicException('Kulak yang sudah final tidak dapat diubah.');
             }
 
             $lot->delete();
@@ -95,16 +183,21 @@ final class PurchaseService
             $purchase = Purchase::query()->lockForUpdate()->with('stockLots')->findOrFail($purchase->id);
 
             if ($purchase->status !== 'open') {
-                throw new LogicException('Pembelian sudah difinalkan.');
+                throw new LogicException('Kulak yang sudah final tidak dapat diubah.');
             }
 
             if ($purchase->stockLots->isEmpty()) {
-                throw new LogicException('Pembelian belum memiliki lot.');
+                throw new LogicException('Kulak yang sudah final tidak dapat diubah.');
             }
 
             $cleanWeightMilli = $purchase->stockLots->sum(
                 fn (StockLot $lot): int => $this->toMilliKilograms((string) $lot->clean_weight_kg)
             );
+            if ($cleanWeightMilli > $this->toMilliKilograms((string) $purchase->gross_weight_kg)) {
+                throw ValidationException::withMessages([
+                    'gross_weight_kg' => 'Jumlah berat lot tidak boleh melebihi berat kotor kulak.',
+                ]);
+            }
             $costPerCleanKg = $this->roundHalfUp(
                 ((int) $purchase->total_cost * 1000),
                 $cleanWeightMilli
@@ -138,8 +231,49 @@ final class PurchaseService
                 'clean_weight_kg' => $cleanWeightMilli / 1000,
             ]);
 
-            return $purchase->load(['supplier', 'stockLots.product']);
+            return $this->prepareResponse($purchase->load(['supplier', 'stockLots.product']));
         });
+    }
+
+    private function assertLotTotalWithinGross(Purchase $purchase, string $newWeight, ?int $excludeLotId = null): void
+    {
+        $lots = $purchase->stockLots()->when($excludeLotId !== null, fn ($query) => $query->whereKeyNot($excludeLotId))->get();
+        if ($this->lotsTotalMilli($lots) + $this->toMilliKilograms($newWeight) > $this->toMilliKilograms((string) $purchase->gross_weight_kg)) {
+            throw ValidationException::withMessages([
+                'clean_weight_kg' => 'Jumlah berat lot tidak boleh melebihi berat kotor kulak.',
+            ]);
+        }
+    }
+
+    /** @param iterable<StockLot> $lots */
+    private function lotsTotalMilli(iterable $lots): int
+    {
+        $total = 0;
+        foreach ($lots as $lot) {
+            $total += $this->toMilliKilograms((string) $lot->clean_weight_kg);
+        }
+
+        return $total;
+    }
+
+    private function prepareResponse(Purchase $purchase): Purchase
+    {
+        $purchase->loadMissing(['supplier', 'stockLots.product']);
+        $lotsTotal = $this->lotsTotalMilli($purchase->stockLots);
+        $gross = $this->toMilliKilograms((string) $purchase->gross_weight_kg);
+        $purchase->setAttribute('editable', $purchase->status === 'open');
+        $purchase->setAttribute('lots_total_kg', $this->formatWeight($lotsTotal));
+        $purchase->setAttribute('cleaning_shrink_kg', $this->formatWeight($gross - $lotsTotal));
+
+        return $purchase;
+    }
+
+    private function formatWeight(int $milliKilograms): string
+    {
+        $sign = $milliKilograms < 0 ? '-' : '';
+        $absolute = abs($milliKilograms);
+
+        return $sign.intdiv($absolute, 1000).'.'.str_pad((string) ($absolute % 1000), 3, '0', STR_PAD_LEFT);
     }
 
     private function calculateTotalCost(string $weight, int $pricePerKg): int

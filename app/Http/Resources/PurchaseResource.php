@@ -19,10 +19,14 @@ class PurchaseResource extends JsonResource
             'total_cost' => $this->total_cost,
             'notes' => $this->notes,
             'status' => $this->status,
+            'editable' => (bool) $this->editable,
+            'lots_total_kg' => $this->lots_total_kg,
+            'cleaning_shrink_kg' => $this->cleaning_shrink_kg,
             'cost_per_clean_kg' => $this->cost_per_clean_kg,
             'clean_weight_kg' => $this->formatNullableWeight($this->clean_weight_kg),
             'finalized_at' => $this->finalized_at?->toIso8601String(),
             'created_by' => $this->created_by,
+            'lots' => StockLotResource::collection($this->whenLoaded('stockLots')),
             'stock_lots' => StockLotResource::collection($this->whenLoaded('stockLots')),
         ];
     }
