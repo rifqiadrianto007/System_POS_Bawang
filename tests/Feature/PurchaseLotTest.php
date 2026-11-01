@@ -94,7 +94,7 @@ it('finalizes the example batch at 21250 per clean kilogram and creates movement
         ->assertJsonPath('data.status', 'finalized')
         ->assertJsonPath('data.cost_per_clean_kg', 21250)
         ->assertJsonPath('data.clean_weight_kg', '80.000')
-        ->assertJsonCount(3, 'data.stock_lots');
+        ->assertJsonCount(3, 'data.lots');
 
     $purchase->refresh();
     expect($purchase->status)->toBe('finalized')

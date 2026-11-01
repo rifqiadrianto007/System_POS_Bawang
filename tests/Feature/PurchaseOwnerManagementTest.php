@@ -143,7 +143,8 @@ it('PB-06 returns purchase status, editability, lot totals, cleaning shrink, and
 
     $this->withToken($token)->getJson("/api/v1/purchases/{$purchase->id}")->assertOk()
         ->assertJsonPath('data.status', 'open')->assertJsonPath('data.editable', true)
-        ->assertJsonPath('data.lots_total_kg', '80.000')->assertJsonPath('data.cleaning_shrink_kg', '20.000')
+        // Open purchases do not expose derived cleaning values until finalization.
+        ->assertJsonPath('data.lots_total_kg', '80.000')->assertJsonPath('data.cleaning_shrink_kg', null)
         ->assertJsonCount(1, 'data.lots');
 });
 

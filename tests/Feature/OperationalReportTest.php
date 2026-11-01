@@ -161,7 +161,7 @@ it('reports stock totals and products from the stock ledger', function () {
     ]);
     StockMovement::query()->create([
         'product_id' => $product->id,
-        'lot_id' => null,
+        'lot_id' => $lot->id,
         'type' => 'count_adjust',
         'weight_kg' => '-1.000',
         'unit_cost' => 21250,
@@ -171,14 +171,14 @@ it('reports stock totals and products from the stock ledger', function () {
     $this->withToken($token)
         ->getJson('/api/v1/reports/stock?date=2026-10-22')
         ->assertOk()
-        ->assertJsonPath('data.summary.received_weight_kg', '20.000')
-        ->assertJsonPath('data.summary.stock_weight_kg', '14.000')
-        ->assertJsonPath('data.summary.sold_weight_kg', '5.000')
-        ->assertJsonPath('data.summary.cleaning_shrink_kg', '0.000')
-        ->assertJsonPath('data.summary.display_shrink_kg', '1.000')
-        ->assertJsonPath('data.summary.display_shrink_value', 21250)
-        ->assertJsonPath('data.products.0.product_name', 'Merah A')
-        ->assertJsonPath('data.products.0.stock_weight_kg', '14.000');
+        ->assertJsonPath('data.clean_kg', '20.000')
+        ->assertJsonPath('data.stock_ready_kg', '14.000')
+        // Y-02 reports sold weight from completed transaction items, not raw sale movements.
+        ->assertJsonPath('data.sold_kg', '0.000')
+        ->assertJsonPath('data.display_shrink_kg', '-1.000')
+        ->assertJsonPath('data.display_shrink_value', 21250)
+        ->assertJsonPath('data.products.0.name', 'Merah A')
+        ->assertJsonPath('data.products.0.stock_kg', '14.000');
 });
 
 it('reports completed transaction counts, revenue, and void counts by cashier', function () {

@@ -119,7 +119,7 @@ it('creates a shortfall allocation when stock is insufficient', function () {
     $response = $this->withToken($token)
         ->postJson('/api/v1/transactions', allocationPayload($product->id, '8f9c6a52-5f55-4f4e-9d4a-0c5f9d1a7b12'))
         ->assertCreated()
-        ->assertJsonPath('data.items.0.cogs', 127500);
+        ->assertJsonPath('data.items.0.cogs', 42500);
 
     $allocations = SaleAllocation::query()
         ->where('transaction_item_id', $response->json('data.items.0.id'))
@@ -129,9 +129,11 @@ it('creates a shortfall allocation when stock is insufficient', function () {
         ->and($allocations[0]->lot_id)->toBe($lot->id)
         ->and($allocations[0]->weight_kg)->toBe('2.000')
         ->and($allocations[0]->is_shortfall)->toBeFalse()
-        ->and($allocations[1]->lot_id)->toBe($lot->id)
+        // Y-03 keeps unresolved shortfall allocations lot-less so open or exhausted
+        // lots can never become negative.
+        ->and($allocations[1]->lot_id)->toBeNull()
         ->and($allocations[1]->weight_kg)->toBe('4.000')
-        ->and($allocations[1]->unit_cost)->toBe(21250)
+        ->and($allocations[1]->unit_cost)->toBe(0)
         ->and($allocations[1]->is_shortfall)->toBeTrue();
 
     expect(StockMovement::query()->where('type', 'sale')->count())->toBe(2);
