@@ -60,6 +60,7 @@ function amountPaidPresentationItem(Transaction $transaction): void
 }
 
 it('returns null payment and change for legacy transactions in detail and receipt', function () {
+    Carbon::setTestNow(Carbon::parse('2026-10-27 10:00:00', 'Asia/Jakarta'));
     [$cashier, $token] = amountPaidPresentationUser('kasir', 'legacy');
     $transaction = amountPaidPresentationTransaction($cashier, ['amount_paid' => null, 'occurred_at' => '2026-10-26 03:00:00']);
     amountPaidPresentationItem($transaction);
@@ -78,6 +79,7 @@ it('returns null payment and change for legacy transactions in detail and receip
 });
 
 it('includes payment and computed change in a discounted overpaid receipt', function () {
+    Carbon::setTestNow(Carbon::parse('2026-10-27 10:00:00', 'Asia/Jakarta'));
     [$cashier, $token] = amountPaidPresentationUser('kasir', 'receipt');
     $transaction = amountPaidPresentationTransaction($cashier, [
         'discount' => 5000,
@@ -97,6 +99,7 @@ it('includes payment and computed change in a discounted overpaid receipt', func
 });
 
 it('shows payment details to cashiers without exposing cogs in detail and receipt', function () {
+    Carbon::setTestNow(Carbon::parse('2026-10-27 10:00:00', 'Asia/Jakarta'));
     [$cashier, $token] = amountPaidPresentationUser('kasir', 'role');
     $transaction = amountPaidPresentationTransaction($cashier, ['amount_paid' => 100000, 'occurred_at' => '2026-10-26 03:00:00']);
     amountPaidPresentationItem($transaction);

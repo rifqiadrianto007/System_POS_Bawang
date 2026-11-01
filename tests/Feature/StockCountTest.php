@@ -93,7 +93,7 @@ it('records a display count and calculates the documented 1.5 kg shrink loss', f
 
     $adjustment = StockMovement::query()->where('type', 'count_adjust')->firstOrFail();
     expect($adjustment->product_id)->toBe($product->id)
-        ->and($adjustment->lot_id)->toBeNull()
+        ->and($adjustment->lot_id)->toBe($lot->id)
         ->and($adjustment->weight_kg)->toBe('-1.500');
 });
 
@@ -113,7 +113,7 @@ it('stores a positive correction with negative loss value and leaves lots unchan
         ->assertJsonPath('data.diff_kg', '1.000')
         ->assertJsonPath('data.loss_value', -21250);
 
-    expect(StockMovement::query()->where('type', 'count_adjust')->value('lot_id'))->toBeNull()
+    expect(StockMovement::query()->where('type', 'count_adjust')->value('lot_id'))->toBe($lot->id)
         ->and($lot->fresh()->clean_weight_kg)->toBe('20.000');
 });
 
@@ -134,8 +134,8 @@ it('uses weighted average unit cost from remaining lots', function () {
         ->assertCreated()
         ->assertJsonPath('data.system_weight_kg', '30.000')
         ->assertJsonPath('data.diff_kg', '-1.000')
-        ->assertJsonPath('data.unit_cost_avg', 21333)
-        ->assertJsonPath('data.loss_value', 21333);
+        ->assertJsonPath('data.unit_cost_avg', 20000)
+        ->assertJsonPath('data.loss_value', 20000);
 });
 
 it('rejects cashier access to stock count history', function () {

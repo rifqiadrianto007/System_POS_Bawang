@@ -3,10 +3,14 @@
 namespace Database\Seeders;
 
 use App\Models\Product;
+use App\Models\ProductPriceHistory;
 use App\Models\Supplier;
 use App\Models\User;
+use App\Services\ExpenseService;
+use App\Services\PurchaseService;
 use App\Services\TransactionService;
 use App\Services\PricingService;
+use App\Services\StockCountService;
 use Carbon\Carbon;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
@@ -79,7 +83,33 @@ class DatabaseSeeder extends Seeder
             'is_active' => true,
         ]);
 
-        Supplier::query()->create([
+        Product::query()->create([
+            'name' => 'Putih B (nonaktif)',
+            'price_retail' => 28000,
+            'price_3kg' => 27000,
+            'price_5kg' => 25000,
+            'is_active' => false,
+        ]);
+
+        // Demo price history without changing the documented current catalog price.
+        ProductPriceHistory::query()->create([
+            'product_id' => $redA->id,
+            'price_retail' => 27600,
+            'price_3kg' => 26000,
+            'price_5kg' => 24000,
+            'changed_by' => $owner->id,
+            'changed_at' => Carbon::parse('2026-10-26 09:00:00', 'Asia/Jakarta'),
+        ]);
+        ProductPriceHistory::query()->create([
+            'product_id' => $redA->id,
+            'price_retail' => 27500,
+            'price_3kg' => 26000,
+            'price_5kg' => 24000,
+            'changed_by' => $owner->id,
+            'changed_at' => Carbon::parse('2026-10-27 09:00:00', 'Asia/Jakarta'),
+        ]);
+
+        $redSupplier = Supplier::query()->create([
             'name' => 'Supplier Bawang Merah',
             'phone' => '081234567801',
             'note' => 'Pemasok bawang merah',
@@ -93,7 +123,53 @@ class DatabaseSeeder extends Seeder
 
         $transactionService = app(TransactionService::class);
         $pricingService = app(PricingService::class);
+        $purchaseService = app(PurchaseService::class);
+        $expenseService = app(ExpenseService::class);
         $products = [$redA, $redB, $redC, $whiteA];
+
+        $finalPurchase = $purchaseService->create([
+            'supplier_id' => $redSupplier->id,
+            'purchased_at' => '2026-10-01',
+            'gross_weight_kg' => '100.000',
+            'price_per_kg' => 17000,
+            'notes' => 'Batch contoh laporan: 100 kg x Rp17.000.',
+        ], $owner->id);
+        foreach ([[$redA, '40.000'], [$redB, '25.000'], [$whiteA, '15.000']] as [$product, $weight]) {
+            $purchaseService->addLot($finalPurchase, [
+                'product_id' => $product->id,
+                'clean_weight_kg' => $weight,
+                'cleaned_at' => '2026-10-01',
+            ], $owner->id);
+        }
+        $purchaseService->finalize($finalPurchase, $owner->id);
+
+        $openPurchase = $purchaseService->create([
+            'supplier_id' => $redSupplier->id,
+            'purchased_at' => '2026-10-26',
+            'gross_weight_kg' => '20.000',
+            'price_per_kg' => 15000,
+            'notes' => 'Kulak open untuk contoh perubahan.',
+        ], $owner->id);
+        $lotPurchase = $purchaseService->create([
+            'supplier_id' => $redSupplier->id,
+            'purchased_at' => '2026-10-26',
+            'gross_weight_kg' => '10.000',
+            'price_per_kg' => 14000,
+            'notes' => 'Kulak open dengan lot untuk contoh finalisasi.',
+        ], $owner->id);
+        $purchaseService->addLot($lotPurchase, [
+            'product_id' => $redC->id,
+            'clean_weight_kg' => '5.000',
+            'cleaned_at' => '2026-10-26',
+        ], $owner->id);
+
+        foreach ([
+            ['name' => 'Plastik kemasan demo', 'category' => 'kemasan', 'amount' => 35000, 'spent_at' => '2026-10-01'],
+            ['name' => 'Transport kulak demo', 'category' => 'transportasi', 'amount' => 50000, 'spent_at' => '2026-10-15'],
+            ['name' => 'Listrik toko demo', 'category' => 'listrik_air', 'amount' => 60000, 'spent_at' => '2026-10-26'],
+        ] as $expense) {
+            $expenseService->create($expense, $owner->id);
+        }
 
         for ($number = 1; $number <= 20; $number++) {
             $product = $products[($number - 1) % count($products)];
@@ -129,5 +205,31 @@ class DatabaseSeeder extends Seeder
                 $transactionService->void($transaction, $owner->id, 'Contoh transaksi void demo');
             }
         }
+
+        // Zero-difference counts demonstrate active/cancelled history without
+        // changing ledger stock or the manually checkable report totals.
+        $stockCountService = app(StockCountService::class);
+        $productStock = app(\App\Services\ProductCatalogService::class)
+            ->list([], 'owner')->firstWhere('id', $redA->id)?->stock_kg ?? '0.000';
+        $stockCountA = $stockCountService->create([
+            'product_id' => $redA->id,
+            'counted_weight_kg' => $productStock,
+            'counted_at' => Carbon::parse('2026-10-25 12:00:00', 'Asia/Jakarta')->toDateTimeString(),
+            'notes' => 'Contoh hitung ulang aktif lama',
+        ], $owner->id);
+        $stockCountB = $stockCountService->create([
+            'product_id' => $redA->id,
+            'counted_weight_kg' => $productStock,
+            'counted_at' => Carbon::parse('2026-10-26 12:00:00', 'Asia/Jakarta')->toDateTimeString(),
+            'notes' => 'Contoh hitung ulang aktif terbaru',
+        ], $owner->id);
+        $stockCountService->create([
+            'product_id' => $redA->id,
+            'counted_weight_kg' => $productStock,
+            'counted_at' => Carbon::parse('2026-10-27 09:00:00', 'Asia/Jakarta')->toDateTimeString(),
+            'notes' => 'Contoh hitung ulang yang dibatalkan',
+        ], $owner->id);
+        $cancelledCount = \App\Models\StockCount::query()->latest('id')->firstOrFail();
+        $stockCountService->cancel($cancelledCount, 'Contoh pembatalan seed', $owner->id);
     }
 }

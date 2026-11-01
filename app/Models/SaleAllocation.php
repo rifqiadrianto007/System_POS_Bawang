@@ -7,13 +7,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class SaleAllocation extends Model
 {
-    protected $fillable = ['transaction_item_id', 'lot_id', 'weight_kg', 'unit_cost', 'is_shortfall'];
+    protected $fillable = ['transaction_item_id', 'lot_id', 'weight_kg', 'unit_cost', 'is_shortfall', 'backfilled_at'];
 
     protected function casts(): array
     {
         return [
             'weight_kg' => 'decimal:3',
             'is_shortfall' => 'boolean',
+            'backfilled_at' => 'datetime',
         ];
     }
 

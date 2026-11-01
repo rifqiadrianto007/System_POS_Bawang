@@ -8,6 +8,7 @@ use App\Models\StockLot;
 use App\Models\StockMovement;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
+use App\Services\ShortfallResolver;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -15,7 +16,10 @@ use LogicException;
 
 final class TransactionService
 {
-    public function __construct(private readonly PricingService $pricingService) {}
+    public function __construct(
+        private readonly PricingService $pricingService,
+        private readonly ShortfallResolver $shortfallResolver
+    ) {}
 
     /**
      * @param  array<string, mixed>  $attributes
@@ -149,6 +153,7 @@ final class TransactionService
         $requiredMilli = $this->toMilliKilograms((string) $transactionItem->weight_kg);
         $lots = StockLot::query()
             ->where('product_id', $transactionItem->product_id)
+            ->whereHas('purchase', fn ($query) => $query->where('status', 'finalized'))
             ->with('movements')
             ->orderBy('cleaned_at')
             ->orderBy('id')
@@ -182,18 +187,27 @@ final class TransactionService
         }
 
         if ($remainingMilli > 0) {
-            $latestLot = $lots->last();
-            $unitCost = $latestLot?->unit_cost === null ? 0 : (int) $latestLot->unit_cost;
             $this->createAllocation(
                 $transactionItem,
-                $latestLot,
+                null,
                 $remainingMilli,
-                $unitCost,
+                0,
                 true,
                 $occurredAt,
                 $createdBy
             );
-            $cogsNumerator += $remainingMilli * $unitCost;
+            StockMovement::query()->create([
+                'product_id' => $transactionItem->product_id,
+                'lot_id' => null,
+                'type' => 'sale',
+                'weight_kg' => $this->formatWeight(-$remainingMilli),
+                'unit_cost' => 0,
+                'ref_type' => Transaction::class,
+                'ref_id' => $transactionItem->transaction_id,
+                'occurred_at' => $occurredAt,
+                'created_by' => $createdBy,
+                'note' => 'Shortfall penjualan',
+            ]);
         }
 
         $transactionItem->update(['cogs' => $this->roundHalfUp($cogsNumerator, 1000)]);
@@ -290,10 +304,6 @@ final class TransactionService
 
             foreach ($transaction->items as $item) {
                 foreach ($item->saleAllocations as $allocation) {
-                    if ($allocation->lot_id === null) {
-                        continue;
-                    }
-
                     StockMovement::query()->create([
                         'product_id' => $item->product_id,
                         'lot_id' => $allocation->lot_id,
@@ -304,7 +314,9 @@ final class TransactionService
                         'ref_id' => $transaction->id,
                         'occurred_at' => now(),
                         'created_by' => $ownerId,
-                        'note' => 'Pengembalian stok transaksi void',
+                        'note' => $allocation->lot_id === null
+                            ? 'Pengurangan shortfall transaksi void'
+                            : 'Pengembalian stok transaksi void',
                     ]);
                 }
             }

@@ -87,13 +87,14 @@ it('finalizes the example batch at 21250 per clean kilogram and creates movement
             ->assertCreated();
     }
 
+    // PB-04 uses the standard 409 conflict message for finalization without lots.
     $this->withToken($token)
         ->postJson("/api/v1/purchases/{$purchase->id}/finalize")
         ->assertOk()
         ->assertJsonPath('data.status', 'finalized')
         ->assertJsonPath('data.cost_per_clean_kg', 21250)
         ->assertJsonPath('data.clean_weight_kg', '80.000')
-        ->assertJsonCount(3, 'data.stock_lots');
+        ->assertJsonCount(3, 'data.lots');
 
     $purchase->refresh();
     expect($purchase->status)->toBe('finalized')
@@ -114,7 +115,7 @@ it('rejects finalization without lots and rejects changes after finalization', f
     $this->withToken($token)
         ->postJson("/api/v1/purchases/{$purchase->id}/finalize")
         ->assertStatus(409)
-        ->assertJsonPath('message', 'Pembelian belum memiliki lot.');
+        ->assertJsonPath('message', 'Kulak yang sudah final tidak dapat diubah.');
 
     $product = lotProduct('Putih A');
     $this->withToken($token)

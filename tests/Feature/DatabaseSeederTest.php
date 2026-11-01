@@ -8,12 +8,14 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-it('seeds one owner, two cashiers, four products, and two suppliers', function () {
+it('seeds one owner, two cashiers, four active products plus one inactive product, and two suppliers', function () {
     $this->seed();
 
     expect(User::query()->where('role', 'owner')->count())->toBe(1)
         ->and(User::query()->where('role', 'kasir')->count())->toBe(2)
-        ->and(Product::query()->count())->toBe(4)
+        ->and(Product::query()->count())->toBe(5)
+        ->and(Product::query()->where('is_active', true)->count())->toBe(4)
+        ->and(Product::query()->where('is_active', false)->count())->toBe(1)
         ->and(Supplier::query()->count())->toBe(2)
         ->and(Supplier::query()->pluck('name')->all())
         ->toEqualCanonicalizing(['Supplier Bawang Merah', 'Supplier Bawang Putih']);

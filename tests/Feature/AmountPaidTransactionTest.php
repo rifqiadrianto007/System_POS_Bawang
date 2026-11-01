@@ -143,9 +143,10 @@ it('supports fresh migration and rollback of the nullable amount_paid column', f
     // RefreshDatabase has already run migrate:fresh for this test connection.
     expect(Schema::hasColumn('transactions', 'amount_paid'))->toBeTrue();
 
-    expect(Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true]))->toBe(0)
+    $amountPaidMigration = 'database/migrations/2026_10_24_000000_add_amount_paid_to_transactions_table.php';
+    expect(Artisan::call('migrate:rollback', ['--path' => $amountPaidMigration, '--force' => true]))->toBe(0)
         ->and(Schema::hasColumn('transactions', 'amount_paid'))->toBeFalse();
 
-    expect(Artisan::call('migrate', ['--force' => true]))->toBe(0)
+    expect(Artisan::call('migrate', ['--path' => $amountPaidMigration, '--force' => true]))->toBe(0)
         ->and(Schema::hasColumn('transactions', 'amount_paid'))->toBeTrue();
 });

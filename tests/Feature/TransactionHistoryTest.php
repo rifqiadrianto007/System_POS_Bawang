@@ -164,7 +164,7 @@ it('H-24 returns pagination metadata and H-25 returns exactly the documented row
     historyTransaction($owner, 'POS-261026-0024', '2026-10-26 01:00:00');
     $response = $this->withToken($token)->getJson('/api/v1/transactions?period=today')->assertOk();
     expect(array_keys($response->json('data.0')))->toBe([
-        'id', 'invoice_no', 'occurred_at', 'cashier_name', 'items_count', 'total_weight_kg', 'subtotal', 'discount', 'total', 'payment_method', 'status', 'customer_name',
+        'id', 'invoice_no', 'occurred_at', 'cashier_name', 'items_count', 'total_weight_kg', 'subtotal', 'discount', 'total', 'payment_method', 'status', 'customer_name', 'has_shortfall',
     ]);
     expect(array_keys($response->json('meta')))->toBe(['total', 'current_page', 'last_page', 'per_page']);
 });

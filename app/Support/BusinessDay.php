@@ -3,10 +3,21 @@
 namespace App\Support;
 
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 final class BusinessDay
 {
     private const TIMEZONE = 'Asia/Jakarta';
+
+    /** SQL expression that converts a UTC timestamp column to its WIB calendar date. */
+    public static function localDateExpression(string $column): string
+    {
+        return match (DB::connection()->getDriverName()) {
+            'sqlite' => "DATE(DATETIME({$column}, '+7 hours'))",
+            'mysql', 'mariadb' => "DATE(DATE_ADD({$column}, INTERVAL 7 HOUR))",
+            default => "CAST(({$column} + INTERVAL '7 hours') AS DATE)",
+        };
+    }
 
     /** @return array{0: Carbon, 1: Carbon} */
     public static function today(): array

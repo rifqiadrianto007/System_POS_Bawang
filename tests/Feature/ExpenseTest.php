@@ -3,9 +3,18 @@
 use App\Models\AuditLog;
 use App\Models\Expense;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-10-27 10:00:00', 'Asia/Jakarta'));
+});
+
+afterEach(function (): void {
+    Carbon::setTestNow();
+});
 
 function expenseUser(string $role, string $suffix): array
 {
@@ -21,6 +30,7 @@ function expensePayload(): array
 {
     return [
         'name' => 'Listrik toko',
+        'category' => 'listrik_air',
         'amount' => 50000,
         'spent_at' => '2026-10-22',
         'notes' => 'Tagihan bulan Oktober',
@@ -61,6 +71,7 @@ it('allows an owner to update an expense and records the audit', function () {
     $this->withToken($token)
         ->putJson("/api/v1/expenses/{$expense->id}", [
             'name' => 'Sewa toko',
+            'category' => 'sewa_retribusi',
             'amount' => 75000,
             'spent_at' => '2026-10-23',
             'notes' => null,
