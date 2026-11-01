@@ -43,6 +43,7 @@ Route::prefix('v1')->group(function (): void {
             Route::get('/purchases/{purchase}', [PurchaseController::class, 'show']);
             Route::get('/stock', StockController::class);
             Route::post('/stock-counts', [StockCountController::class, 'store']);
+            Route::delete('/stock-counts/{stockCount}', [StockCountController::class, 'destroy'])->middleware('role:owner');
             Route::get('/stock-counts', [StockCountController::class, 'index']);
             Route::get('/expenses', [ExpenseController::class, 'index']);
             Route::get('/expenses/suggestions', [ExpenseController::class, 'suggestions']);
