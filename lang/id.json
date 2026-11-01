@@ -1,0 +1,7 @@
+{
+    "Unauthenticated.": "Tidak terautentikasi.",
+    "This action is unauthorized.": "Aksi ini tidak diizinkan.",
+    "Too Many Attempts.": "Terlalu banyak percobaan. Silakan coba lagi nanti.",
+    "Too Many Attempts. Please try again in :seconds seconds.": "Terlalu banyak percobaan. Silakan coba lagi dalam :seconds detik.",
+    "Not Found.": "Data tidak ditemukan."
+}
