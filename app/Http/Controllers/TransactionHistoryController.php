@@ -18,6 +18,7 @@ class TransactionHistoryController extends Controller
 
         $query = Transaction::query()
             ->with(['cashier:id,name'])
+            ->with(['items.saleAllocations'])
             ->withCount('items')
             ->withSum('items', 'weight_kg');
         $this->applyBounds($query, $start, $end);
@@ -29,6 +30,14 @@ class TransactionHistoryController extends Controller
         }
 
         $query->orderByDesc('occurred_at')->orderByDesc('id');
+        if ($request->user()?->role === 'owner') {
+            $query->withExists([
+                'items as has_shortfall' => fn ($items) => $items->whereHas(
+                    'saleAllocations',
+                    fn ($allocations) => $allocations->where('is_shortfall', true)
+                ),
+            ]);
+        }
         $perPage = min($request->integer('per_page', 20), 50);
         $page = $query->paginate($perPage, ['*'], 'page', $request->integer('page', 1));
 

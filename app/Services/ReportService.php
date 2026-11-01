@@ -50,7 +50,8 @@ final class ReportService
             ->where('transactions.occurred_at', '<', $end)->groupBy('report_date')->get()->keyBy('report_date');
         $countDate = BusinessDay::localDateExpression('stock_counts.counted_at');
         $shrinkRows = StockCount::query()->selectRaw("{$countDate} as report_date, SUM(loss_value) as display_shrink_value")
-            ->where('counted_at', '>=', $start)->where('counted_at', '<', $end)->groupBy('report_date')->get()->keyBy('report_date');
+            ->where('status', 'active')->where('counted_at', '>=', $start)->where('counted_at', '<', $end)
+            ->groupBy('report_date')->get()->keyBy('report_date');
         $expenseRows = Expense::query()->selectRaw('DATE(spent_at) as report_date, SUM(amount) as operating_expenses')
             ->where('spent_at', '>=', $localStart)->where('spent_at', '<', $localEnd)->groupBy('report_date')->get()->keyBy('report_date');
         $purchaseRows = Purchase::query()->selectRaw('DATE(purchased_at) as report_date, SUM(total_cost) as purchases_total')
@@ -161,12 +162,22 @@ final class ReportService
         $localEnd = Carbon::createFromFormat('!Y-m-d', $to, 'Asia/Jakarta')->addDay()->toDateString();
         $purchases = Purchase::query()->where('purchased_at', '>=', $from)->where('purchased_at', '<', $localEnd)->get();
         $movements = StockMovement::query()->where('occurred_at', '>=', $start)->where('occurred_at', '<', $end)->get();
-        $counts = StockCount::query()->where('counted_at', '>=', $start)->where('counted_at', '<', $end)->get();
+        $counts = StockCount::query()->where('status', 'active')->where('counted_at', '>=', $start)->where('counted_at', '<', $end)->get();
         $soldRows = TransactionItem::query()->join('transactions', 'transactions.id', '=', 'transaction_items.transaction_id')
             ->select('transaction_items.product_id')->selectRaw('SUM(transaction_items.weight_kg) as sold')
             ->where('transactions.status', 'completed')->where('transactions.occurred_at', '>=', $start)
             ->where('transactions.occurred_at', '<', $end)->groupBy('transaction_items.product_id')->get()->keyBy('product_id');
-        $lastCounts = StockCount::query()->where('counted_at', '<', $end)->orderByDesc('counted_at')->get(['product_id', 'counted_at'])
+        $shortfallRows = DB::table('sale_allocations')
+            ->join('transaction_items', 'transaction_items.id', '=', 'sale_allocations.transaction_item_id')
+            ->join('transactions', 'transactions.id', '=', 'transaction_items.transaction_id')
+            ->select('transaction_items.product_id')
+            ->selectRaw('SUM(sale_allocations.weight_kg) as shortfall')
+            ->where('transactions.status', 'completed')
+            ->where('sale_allocations.is_shortfall', true)
+            ->groupBy('transaction_items.product_id')
+            ->get()
+            ->keyBy('product_id');
+        $lastCounts = StockCount::query()->where('status', 'active')->where('counted_at', '<', $end)->orderByDesc('counted_at')->get(['product_id', 'counted_at'])
             ->unique('product_id')->keyBy('product_id');
         $products = Product::query()->with(['stockMovements', 'stockLots.movements'])->orderBy('name')->get();
         $incoming = $pending = $clean = $cleaningShrink = 0;
@@ -186,7 +197,7 @@ final class ReportService
             $displayShrinkValue += (int) $count->loss_value;
         }
         $productRows = [];
-        $legacyReceived = $legacySold = $soldTotal = 0;
+        $soldTotal = $shortfallTotal = 0;
         foreach ($products as $product) {
             $stock = $this->sumMovementWeights($product->stockMovements);
             $stockReady += $stock;
@@ -201,6 +212,8 @@ final class ReportService
             $productSold = $soldRows->get($product->id);
             $soldMilli = $productSold ? $this->toMilli((string) $productSold->sold) : 0;
             $soldTotal += $soldMilli;
+            $productShortfall = $this->toMilli((string) ($shortfallRows->get($product->id)->shortfall ?? '0'));
+            $shortfallTotal += $productShortfall;
             $productCounts = $counts->where('product_id', $product->id);
             $productShrink = $productShrinkValue = 0;
             $lastCountDate = null;
@@ -214,36 +227,21 @@ final class ReportService
             foreach ($movements->where('product_id', $product->id) as $movement) {
                 if ($movement->type === 'in_clean' && $this->toMilli((string) $movement->weight_kg) > 0) $received += $this->toMilli((string) $movement->weight_kg);
             }
-            $legacyReceived += $received;
-            $legacyProductSold = 0;
-            foreach ($movements->where('product_id', $product->id) as $movement) {
-                if ($movement->type === 'sale' && $this->toMilli((string) $movement->weight_kg) < 0) {
-                    $legacyProductSold += abs($this->toMilli((string) $movement->weight_kg));
-                }
-            }
-            $legacySold += $legacyProductSold;
             $productRows[] = [
                 'product_id' => (int) $product->id, 'name' => $product->name, 'is_active' => (bool) $product->is_active,
                 'stock_kg' => $this->formatWeight($stock), 'stock_value' => (int) $value,
+                'shortfall_kg' => $this->formatWeight($productShortfall),
                 'sold_kg' => $this->formatWeight($soldMilli), 'display_shrink_kg' => $this->formatWeight($productShrink),
                 'display_shrink_value' => (int) $productShrinkValue, 'last_count_date' => $lastCountDate,
-                // Kept for existing report clients while the contract is extended.
-                'product_name' => $product->name, 'received_weight_kg' => $this->formatWeight($received),
-                'stock_weight_kg' => $this->formatWeight($stock), 'sold_weight_kg' => $this->formatWeight($legacyProductSold),
             ];
         }
-        $legacySummary = [
-            'received_weight_kg' => $this->formatWeight($legacyReceived), 'stock_weight_kg' => $this->formatWeight($stockReady),
-            'sold_weight_kg' => $this->formatWeight($legacySold), 'cleaning_shrink_kg' => $this->formatWeight($cleaningShrink),
-            'display_shrink_kg' => $this->formatWeight(max(0, -$displayShrink)), 'display_shrink_value' => (int) $displayShrinkValue,
-        ];
         return [
             'from' => $from, 'to' => $to, 'incoming_gross_kg' => $this->formatWeight($incoming),
             'pending_gross_kg' => $this->formatWeight($pending), 'clean_kg' => $this->formatWeight($clean),
             'cleaning_shrink_kg' => $this->formatWeight($cleaningShrink), 'sold_kg' => $this->formatWeight($soldTotal),
             'display_shrink_kg' => $this->formatWeight($displayShrink), 'display_shrink_value' => (int) $displayShrinkValue,
-            'stock_ready_kg' => $this->formatWeight($stockReady), 'stock_value' => (int) $stockValue,
-            'products' => $productRows, 'date' => $from, 'summary' => $legacySummary,
+            'stock_ready_kg' => $this->formatWeight($stockReady), 'shortfall_kg' => $this->formatWeight($shortfallTotal),
+            'stock_value' => (int) $stockValue, 'products' => $productRows,
         ];
     }
 

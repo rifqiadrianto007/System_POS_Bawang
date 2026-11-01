@@ -9,7 +9,7 @@ class TransactionHistoryResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
-        return [
+        $data = [
             'id' => $this->id,
             'invoice_no' => $this->invoice_no,
             'occurred_at' => $this->occurred_at?->toIso8601String(),
@@ -23,6 +23,12 @@ class TransactionHistoryResource extends JsonResource
             'status' => $this->status,
             'customer_name' => $this->customer_name,
         ];
+
+        if ($request->user()?->role === 'owner') {
+            $data['has_shortfall'] = (bool) ($this->has_shortfall ?? false);
+        }
+
+        return $data;
     }
 
     private function formatWeight(string $weight): string

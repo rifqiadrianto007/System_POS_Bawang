@@ -13,7 +13,11 @@ final class StockService
     public function summaries(): array
     {
         return Product::query()
-            ->with(['stockLots.movements', 'stockMovements'])
+            ->with([
+                'stockLots' => fn ($query) => $query->whereHas('purchase', fn ($purchase) => $purchase->where('status', 'finalized')),
+                'stockLots.movements',
+                'stockMovements',
+            ])
             ->orderBy('name')
             ->get()
             ->map(fn (Product $product): array => $this->summarizeProduct($product))
@@ -31,14 +35,33 @@ final class StockService
             ->values()
             ->all();
         $stockMilli = $this->sumMovementWeight($product->stockMovements);
+        $shortfallMilli = $this->shortfallWeight($product);
 
         return [
             'product_id' => $product->id,
             'product_name' => $product->name,
             'stock_weight_kg' => $this->formatWeight($stockMilli),
+            'shortfall_kg' => $this->formatWeight($shortfallMilli),
             'inventory_value' => array_sum(array_column($lots, 'inventory_value')),
             'lots' => $lots,
         ];
+    }
+
+    private function shortfallWeight(Product $product): int
+    {
+        return $this->sumWeightQuery(
+            \App\Models\SaleAllocation::query()
+                ->join('transaction_items', 'transaction_items.id', '=', 'sale_allocations.transaction_item_id')
+                ->join('transactions', 'transactions.id', '=', 'transaction_items.transaction_id')
+                ->where('transaction_items.product_id', $product->id)
+                ->where('transactions.status', 'completed')
+                ->where('sale_allocations.is_shortfall', true)
+        );
+    }
+
+    private function sumWeightQuery($query): int
+    {
+        return $this->toMilliKilograms((string) $query->sum('sale_allocations.weight_kg'));
     }
 
     /**

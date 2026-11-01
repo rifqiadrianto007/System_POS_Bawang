@@ -21,6 +21,10 @@ class StockCountResource extends JsonResource
             'counted_at' => $this->counted_at?->setTimezone('Asia/Jakarta')->toIso8601String(),
             'counted_by' => $this->counted_by,
             'notes' => $this->notes,
+            'status' => $this->status ?? 'active',
+            'cancelled_at' => $this->cancelled_at?->setTimezone('Asia/Jakarta')->toIso8601String(),
+            'cancelled_by_name' => $this->cancelled_by_name,
+            'cancel_reason' => $this->cancel_reason,
         ];
     }
 

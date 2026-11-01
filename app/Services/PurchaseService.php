@@ -4,10 +4,13 @@ namespace App\Services;
 
 use App\Models\AuditLog;
 use App\Models\Purchase;
+use App\Models\SaleAllocation;
 use App\Models\StockLot;
 use App\Models\StockMovement;
 use App\Models\Supplier;
-use Illuminate\Support\Collection;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\QueryException;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use LogicException;
 use Illuminate\Validation\ValidationException;
@@ -39,11 +42,65 @@ final class PurchaseService
         });
     }
 
-    /** @return Collection<int, Purchase> */
-    public function list(): Collection
+    /** @param array<string, mixed> $filters
+     *  @return array{purchases: LengthAwarePaginator, summary: array{count:int,open_count:int,finalized_count:int,gross_weight_kg:string,open_gross_weight_kg:string}}
+     */
+    public function list(array $filters): array
     {
-        return Purchase::query()->with(['supplier', 'stockLots'])->latest('purchased_at')->get()
-            ->map(fn (Purchase $purchase): Purchase => $this->prepareResponse($purchase));
+        $dateQuery = Purchase::query();
+        if (isset($filters['from'])) {
+            $dateQuery->where('purchased_at', '>=', $filters['from']);
+        }
+        if (isset($filters['to'])) {
+            $dateQuery->where('purchased_at', '<=', $filters['to']);
+        }
+
+        $aggregate = (clone $dateQuery)->selectRaw(
+            'COUNT(*) as count, SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as open_count, SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as finalized_count, SUM(gross_weight_kg) as gross_weight_kg, SUM(CASE WHEN status = ? THEN gross_weight_kg ELSE 0 END) as open_gross_weight_kg',
+            ['open', 'finalized', 'open']
+        )->first();
+        $summary = [
+            'count' => (int) $aggregate->count,
+            'open_count' => (int) $aggregate->open_count,
+            'finalized_count' => (int) $aggregate->finalized_count,
+            'gross_weight_kg' => $this->formatWeight($this->toMilliKilograms((string) ($aggregate->gross_weight_kg ?? '0'))),
+            'open_gross_weight_kg' => $this->formatWeight($this->toMilliKilograms((string) ($aggregate->open_gross_weight_kg ?? '0'))),
+        ];
+
+        $query = Purchase::query()->with('supplier:id,name')
+            ->withCount('stockLots as lots_count')
+            ->withSum('stockLots as lots_total_raw', 'clean_weight_kg');
+        if (isset($filters['from'])) {
+            $query->where('purchased_at', '>=', $filters['from']);
+        }
+        if (isset($filters['to'])) {
+            $query->where('purchased_at', '<=', $filters['to']);
+        }
+        if (isset($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+        if (($filters['include'] ?? null) === 'lots') {
+            $query->with('stockLots.product');
+        }
+
+        $perPage = min(50, (int) ($filters['per_page'] ?? 20));
+        $purchases = $query->orderByDesc('purchased_at')->orderByDesc('id')
+            ->paginate($perPage, ['*'], 'page', (int) ($filters['page'] ?? 1));
+
+        $purchases->getCollection()->each(function (Purchase $purchase): void {
+            $grossMilli = $this->toMilliKilograms((string) $purchase->gross_weight_kg);
+            $lotsMilli = $this->toMilliKilograms((string) ($purchase->lots_total_raw ?? '0'));
+            $purchase->setAttribute('lots_total_kg', $this->formatWeight($lotsMilli));
+            $purchase->setAttribute('cleaning_shrink_kg', $purchase->status === 'finalized'
+                ? $this->formatWeight($grossMilli - $lotsMilli)
+                : null);
+            $purchase->setAttribute('editable', $purchase->status === 'open');
+            if ($purchase->status === 'open') {
+                $purchase->setAttribute('cost_per_clean_kg', null);
+            }
+        });
+
+        return ['purchases' => $purchases, 'summary' => $summary];
     }
 
     public function present(Purchase $purchase): Purchase
@@ -144,7 +201,10 @@ final class PurchaseService
         return DB::transaction(function () use ($purchase, $lot, $attributes, $ownerId): StockLot {
             $purchase = Purchase::query()->lockForUpdate()->findOrFail($purchase->id);
             $lot = StockLot::query()->lockForUpdate()->findOrFail($lot->id);
-            if ($purchase->status !== 'open' || $lot->purchase_id !== $purchase->id) {
+            if ($lot->purchase_id !== $purchase->id) {
+                throw (new ModelNotFoundException())->setModel(StockLot::class, [$lot->id]);
+            }
+            if ($purchase->status !== 'open') {
                 throw new LogicException('Kulak yang sudah final tidak dapat diubah.');
             }
 
@@ -166,11 +226,26 @@ final class PurchaseService
         DB::transaction(function () use ($purchase, $lot, $ownerId): void {
             $purchase = Purchase::query()->lockForUpdate()->findOrFail($purchase->id);
 
-            if ($purchase->status !== 'open' || $lot->purchase_id !== $purchase->id) {
+            if ($lot->purchase_id !== $purchase->id) {
+                throw (new ModelNotFoundException())->setModel(StockLot::class, [$lot->id]);
+            }
+            if ($purchase->status !== 'open') {
+                throw new LogicException('Kulak yang sudah final tidak dapat diubah.');
+            }
+            if (StockMovement::query()->where('lot_id', $lot->id)->exists()
+                || SaleAllocation::query()->where('lot_id', $lot->id)->exists()) {
                 throw new LogicException('Kulak yang sudah final tidak dapat diubah.');
             }
 
-            $lot->delete();
+            try {
+                $lot->delete();
+            } catch (QueryException $exception) {
+                if ($exception->getCode() !== '23000') {
+                    throw $exception;
+                }
+
+                throw new LogicException('Kulak yang sudah final tidak dapat diubah.', previous: $exception);
+            }
             $this->recordAudit('purchase.lot_deleted', StockLot::class, $lot->id, $ownerId, [
                 'purchase_id' => $purchase->id,
             ]);
@@ -226,10 +301,14 @@ final class PurchaseService
                 'clean_weight_kg' => $cleanWeightMilli / 1000,
                 'finalized_at' => $now,
             ]);
+            $shortfallResolved = app(ShortfallResolver::class)->resolveLots($purchase->stockLots, $ownerId, $now);
             $this->recordAudit('purchase.finalized', Purchase::class, $purchase->id, $ownerId, [
                 'cost_per_clean_kg' => $costPerCleanKg,
                 'clean_weight_kg' => $cleanWeightMilli / 1000,
+                'shortfall_resolved' => $shortfallResolved,
             ]);
+
+            $purchase->setAttribute('shortfall_resolved', $shortfallResolved);
 
             return $this->prepareResponse($purchase->load(['supplier', 'stockLots.product']));
         });
@@ -263,7 +342,13 @@ final class PurchaseService
         $gross = $this->toMilliKilograms((string) $purchase->gross_weight_kg);
         $purchase->setAttribute('editable', $purchase->status === 'open');
         $purchase->setAttribute('lots_total_kg', $this->formatWeight($lotsTotal));
-        $purchase->setAttribute('cleaning_shrink_kg', $this->formatWeight($gross - $lotsTotal));
+        $purchase->setAttribute(
+            'cleaning_shrink_kg',
+            $purchase->status === 'finalized' ? $this->formatWeight($gross - $lotsTotal) : null
+        );
+        if ($purchase->status === 'open') {
+            $purchase->setAttribute('cost_per_clean_kg', null);
+        }
 
         return $purchase;
     }

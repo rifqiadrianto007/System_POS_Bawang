@@ -23,6 +23,7 @@ final class ProductCatalogService
             )
             ->selectSub(
                 DB::table('stock_lots')
+                    ->join('purchases', 'purchases.id', '=', 'stock_lots.purchase_id')
                     ->joinSub(
                         DB::table('stock_movements')
                             ->select('lot_id')
@@ -36,8 +37,19 @@ final class ProductCatalogService
                     )
                     ->selectRaw('COALESCE(SUM(ROUND(lot_balances.remaining_weight_kg * stock_lots.unit_cost, 0)), 0)')
                     ->whereColumn('stock_lots.product_id', 'products.id')
+                    ->where('purchases.status', 'finalized')
                     ->whereNotNull('stock_lots.unit_cost'),
                 'ledger_stock_value'
+            )
+            ->selectSub(
+                DB::table('sale_allocations')
+                    ->join('transaction_items', 'transaction_items.id', '=', 'sale_allocations.transaction_item_id')
+                    ->join('transactions', 'transactions.id', '=', 'transaction_items.transaction_id')
+                    ->selectRaw('COALESCE(SUM(sale_allocations.weight_kg), 0)')
+                    ->whereColumn('transaction_items.product_id', 'products.id')
+                    ->where('transactions.status', 'completed')
+                    ->where('sale_allocations.is_shortfall', true),
+                'shortfall_weight_kg'
             );
 
         if ($role === 'kasir') {
@@ -50,6 +62,7 @@ final class ProductCatalogService
             if ($role === 'owner') {
                 $product->setAttribute('stock_kg', $this->formatWeight((string) $product->getAttribute('ledger_stock_kg')));
                 $product->setAttribute('stock_value', (int) $product->getAttribute('ledger_stock_value'));
+                $product->setAttribute('shortfall_kg', $this->formatWeight((string) $product->getAttribute('shortfall_weight_kg')));
             }
 
             return $product;

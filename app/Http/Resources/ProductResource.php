@@ -21,6 +21,7 @@ class ProductResource extends JsonResource
         if ($request->user()?->role === 'owner' && array_key_exists('stock_kg', $this->resource->getAttributes())) {
             $data['stock_kg'] = $this->stock_kg;
             $data['stock_value'] = $this->stock_value;
+            $data['shortfall_kg'] = $this->shortfall_kg;
         }
 
         return $data;

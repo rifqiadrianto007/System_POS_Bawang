@@ -27,7 +27,7 @@ class PurchaseResource extends JsonResource
             'finalized_at' => $this->finalized_at?->toIso8601String(),
             'created_by' => $this->created_by,
             'lots' => StockLotResource::collection($this->whenLoaded('stockLots')),
-            'stock_lots' => StockLotResource::collection($this->whenLoaded('stockLots')),
+            'shortfall_resolved' => $this->when(isset($this->shortfall_resolved), $this->shortfall_resolved),
         ];
     }
 
