@@ -11,11 +11,14 @@ class StockSummaryResource extends JsonResource
     {
         return [
             'product_id' => $this->resource['product_id'],
-            'product_name' => $this->resource['product_name'],
-            'stock_weight_kg' => $this->resource['stock_weight_kg'],
+            'name' => $this->resource['name'],
+            'jenis' => $this->resource['jenis'],
+            'is_active' => $this->resource['is_active'],
+            'stock_kg' => $this->resource['stock_kg'],
             'shortfall_kg' => $this->resource['shortfall_kg'],
-            'inventory_value' => $this->resource['inventory_value'],
-            'lots' => $this->resource['lots'],
+            'stock_value' => $this->resource['stock_value'],
+            'avg_cost' => $this->resource['avg_cost'],
+            'last_count_date' => $this->resource['last_count_date'],
         ];
     }
 }

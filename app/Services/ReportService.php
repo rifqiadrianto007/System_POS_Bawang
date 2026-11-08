@@ -6,15 +6,20 @@ use App\Models\Expense;
 use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\StockCount;
+use App\Models\StockLot;
 use App\Models\StockMovement;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
 use App\Support\BusinessDay;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\DB;
 
 final class ReportService
 {
+    public function __construct(
+        private readonly AverageCostService $averageCost,
+        private readonly PurchaseService $purchaseService,
+    ) {}
+
     /**
      * @param  array<string, mixed>  $filters
      * @return array<string, int|string>
@@ -31,7 +36,8 @@ final class ReportService
         while ($cursor->lte($last)) {
             $dateMap[$cursor->toDateString()] = [
                 'date' => $cursor->toDateString(), 'net_sales' => 0, 'operating_expenses' => 0,
-                'purchases_total' => 0, 'cogs' => 0, 'display_shrink_value' => 0, 'net_profit' => 0,
+                'purchases_total' => 0, 'cogs' => 0, 'display_shrink_value' => 0,
+                'cleaning_loss_value' => 0, 'net_profit' => 0,
             ];
             $cursor->addDay();
         }
@@ -56,24 +62,29 @@ final class ReportService
             ->where('spent_at', '>=', $localStart)->where('spent_at', '<', $localEnd)->groupBy('report_date')->get()->keyBy('report_date');
         $purchaseRows = Purchase::query()->selectRaw('DATE(purchased_at) as report_date, SUM(total_cost) as purchases_total')
             ->where('purchased_at', '>=', $localStart)->where('purchased_at', '<', $localEnd)->groupBy('report_date')->get()->keyBy('report_date');
-        $finalizedRows = Purchase::query()->where('status', 'finalized')->where('purchased_at', '>=', $localStart)
-            ->where('purchased_at', '<', $localEnd)->get(['purchased_at', 'gross_weight_kg', 'clean_weight_kg']);
+        $closedPurchases = Purchase::query()->withSum('stockLots as sorted_kg', 'weight_kg')
+            ->whereNotNull('closed_at')->where('closed_at', '>=', $start)->where('closed_at', '<', $end)
+            ->get();
         $cleaningByDate = [];
-        $cleaningTotal = 0;
-        foreach ($finalizedRows as $purchase) {
-            $date = Carbon::parse($purchase->purchased_at)->toDateString();
-            $kg = $this->toMilli((string) $purchase->gross_weight_kg) - $this->toMilli((string) $purchase->clean_weight_kg);
-            $cleaningByDate[$date] = ($cleaningByDate[$date] ?? 0) + $kg;
-            $cleaningTotal += $kg;
+        $cleaningKgTotal = 0;
+        foreach ($closedPurchases as $purchase) {
+            $date = Carbon::parse($purchase->closed_at)->setTimezone('Asia/Jakarta')->toDateString();
+            $unsorted = max(0, $this->averageCost->toMilli((string) $purchase->gross_weight_kg)
+                - $this->averageCost->toMilli((string) ($purchase->sorted_kg ?? '0')));
+            $loss = $this->valueForWeight($unsorted, (int) $purchase->price_per_kg);
+            $cleaningByDate[$date] = ($cleaningByDate[$date] ?? 0) + $loss;
+            $cleaningKgTotal += $unsorted;
         }
         foreach ($dateMap as $date => &$row) {
             $sales = $salesRows->get($date);
             $row['net_sales'] = (int) ($sales->net_sales ?? 0);
             $row['cogs'] = (int) ($cogsRows->get($date)->cogs ?? 0);
             $row['display_shrink_value'] = (int) ($shrinkRows->get($date)->display_shrink_value ?? 0);
+            $row['cleaning_loss_value'] = (int) ($cleaningByDate[$date] ?? 0);
             $row['operating_expenses'] = (int) ($expenseRows->get($date)->operating_expenses ?? 0);
             $row['purchases_total'] = (int) ($purchaseRows->get($date)->purchases_total ?? 0);
-            $row['net_profit'] = $row['net_sales'] - $row['cogs'] - $row['display_shrink_value'] - $row['operating_expenses'];
+            $row['net_profit'] = $row['net_sales'] - $row['cogs'] - $row['display_shrink_value']
+                - $row['cleaning_loss_value'] - $row['operating_expenses'];
         }
         unset($row);
         $daily = array_values($dateMap);
@@ -81,18 +92,20 @@ final class ReportService
         $netSales = $sum('net_sales');
         $cogs = $sum('cogs');
         $displayShrinkValue = $sum('display_shrink_value');
+        $cleaningLossValue = $sum('cleaning_loss_value');
         $operatingExpenses = $sum('operating_expenses');
         $purchasesTotal = $sum('purchases_total');
         $subtotalSum = (int) $salesRows->sum('subtotal_sum');
         $discountSum = (int) $salesRows->sum('discount_sum');
         $transactionsCount = (int) $salesRows->sum('transactions_count');
         $completedIds = Transaction::query()->where('status', 'completed')->where('occurred_at', '>=', $start)->where('occurred_at', '<', $end)->select('id');
-        $shortfallCount = DB::table('sale_allocations')->join('transaction_items', 'transaction_items.id', '=', 'sale_allocations.transaction_item_id')
-            ->whereIn('transaction_items.transaction_id', $completedIds)->where('sale_allocations.is_shortfall', true)->count();
+        $shortfallCount = TransactionItem::query()->whereIn('transaction_id', $completedIds)->where('shortfall_kg', '>', 0)->count();
         $voidCount = Transaction::query()->where('status', 'void')->where('occurred_at', '>=', $start)->where('occurred_at', '<', $end)->count();
         $byPayment = ['cash' => ['count' => 0, 'total' => 0], 'qris' => ['count' => 0, 'total' => 0]];
         foreach ($salesMethodRows as $method => $result) {
-            if (isset($byPayment[$method])) $byPayment[$method] = ['count' => (int) $result->count, 'total' => (int) $result->total];
+            if (isset($byPayment[$method])) {
+                $byPayment[$method] = ['count' => (int) $result->count, 'total' => (int) $result->total];
+            }
         }
         $grossProfit = $netSales - $cogs;
         $totalSpending = $operatingExpenses + $purchasesTotal;
@@ -103,8 +116,10 @@ final class ReportService
             'transactions_count' => $transactionsCount, 'subtotal_sum' => $subtotalSum, 'discount_sum' => $discountSum,
             'gross_profit' => $grossProfit, 'total_spending' => $totalSpending, 'by_payment_method' => $byPayment, 'daily' => $daily,
             'net_sales' => $netSales, 'cogs' => $cogs, 'display_shrink_value' => $displayShrinkValue,
+            'cleaning_loss_value' => $cleaningLossValue,
             'operating_expenses' => $operatingExpenses, 'net_profit' => $sum('net_profit'), 'purchases_total' => $purchasesTotal,
-            'cash_flow' => $netSales - $totalSpending, 'cleaning_shrink_kg' => $this->formatWeight($cleaningTotal),
+            'cash_flow' => $netSales - $totalSpending,
+            'cleaning_shrink_kg' => $this->averageCost->formatWeight($cleaningKgTotal),
             'shortfall_count' => (int) $shortfallCount, 'void_count' => (int) $voidCount,
         ];
     }
@@ -121,16 +136,11 @@ final class ReportService
             ->where('transactions.occurred_at', '>=', $start)
             ->where('transactions.occurred_at', '<', $end)
             ->get();
-        $shortfalls = DB::table('sale_allocations')
-            ->join('transaction_items', 'transaction_items.id', '=', 'sale_allocations.transaction_item_id')
-            ->join('transactions', 'transactions.id', '=', 'transaction_items.transaction_id')
-            ->where('transactions.status', 'completed')
-            ->where('transactions.occurred_at', '>=', $start)
-            ->where('transactions.occurred_at', '<', $end)
-            ->where('sale_allocations.is_shortfall', true)
-            ->select('transaction_items.product_id', DB::raw('count(*) as total'))
-            ->groupBy('transaction_items.product_id')
-            ->pluck('total', 'transaction_items.product_id');
+        $shortfalls = TransactionItem::query()->join('transactions', 'transactions.id', '=', 'transaction_items.transaction_id')
+            ->where('transactions.status', 'completed')->where('transactions.occurred_at', '>=', $start)
+            ->where('transactions.occurred_at', '<', $end)->where('transaction_items.shortfall_kg', '>', 0)
+            ->select('transaction_items.product_id')->selectRaw('COUNT(*) AS total')
+            ->groupBy('transaction_items.product_id')->pluck('total', 'transaction_items.product_id');
         $grouped = [];
         foreach ($rows as $row) {
             $id = (int) $row->product_id;
@@ -160,88 +170,90 @@ final class ReportService
         [$from, $to] = $this->stockDates($filters);
         [$start, $end] = BusinessDay::between($from, $to);
         $localEnd = Carbon::createFromFormat('!Y-m-d', $to, 'Asia/Jakarta')->addDay()->toDateString();
-        $purchases = Purchase::query()->where('purchased_at', '>=', $from)->where('purchased_at', '<', $localEnd)->get();
-        $movements = StockMovement::query()->where('occurred_at', '>=', $start)->where('occurred_at', '<', $end)->get();
-        $counts = StockCount::query()->where('status', 'active')->where('counted_at', '>=', $start)->where('counted_at', '<', $end)->get();
-        $soldRows = TransactionItem::query()->join('transactions', 'transactions.id', '=', 'transaction_items.transaction_id')
-            ->select('transaction_items.product_id')->selectRaw('SUM(transaction_items.weight_kg) as sold')
-            ->where('transactions.status', 'completed')->where('transactions.occurred_at', '>=', $start)
-            ->where('transactions.occurred_at', '<', $end)->groupBy('transaction_items.product_id')->get()->keyBy('product_id');
-        $shortfallRows = DB::table('sale_allocations')
-            ->join('transaction_items', 'transaction_items.id', '=', 'sale_allocations.transaction_item_id')
-            ->join('transactions', 'transactions.id', '=', 'transaction_items.transaction_id')
-            ->select('transaction_items.product_id')
-            ->selectRaw('SUM(sale_allocations.weight_kg) as shortfall')
-            ->where('transactions.status', 'completed')
-            ->where('sale_allocations.is_shortfall', true)
-            ->groupBy('transaction_items.product_id')
-            ->get()
-            ->keyBy('product_id');
-        $lastCounts = StockCount::query()->where('status', 'active')->where('counted_at', '<', $end)->orderByDesc('counted_at')->get(['product_id', 'counted_at'])
-            ->unique('product_id')->keyBy('product_id');
-        $products = Product::query()->with(['stockMovements', 'stockLots.movements'])->orderBy('name')->get();
-        $incoming = $pending = $clean = $cleaningShrink = 0;
+        $purchases = Purchase::query()->with('stockLots.product')->where('purchased_at', '>=', $from)
+            ->where('purchased_at', '<', $localEnd)->get();
+        $purchases = $this->purchaseService->deriveMetrics($purchases);
+        $incoming = $susut = $purchasesCost = $purchaseGross = 0;
         foreach ($purchases as $purchase) {
-            $gross = $this->toMilli((string) $purchase->gross_weight_kg);
-            $incoming += $gross;
-            if ($purchase->status === 'open') {
-                $pending += $gross;
-            } elseif ($purchase->status === 'finalized') {
-                $clean += $this->toMilli((string) $purchase->clean_weight_kg);
-                $cleaningShrink += $gross - $this->toMilli((string) $purchase->clean_weight_kg);
-            }
+            $incoming += $this->toMilli((string) $purchase->gross_weight_kg);
+            $susut += $this->toMilli((string) $purchase->susut_kg);
+            $purchasesCost += (int) $purchase->total_cost;
+            $purchaseGross += $this->toMilli((string) $purchase->gross_weight_kg);
         }
-        $displayShrink = $displayShrinkValue = $stockReady = $stockValue = 0;
-        foreach ($counts as $count) {
-            $displayShrink += $this->toMilli((string) $count->diff_kg);
-            $displayShrinkValue += (int) $count->loss_value;
+
+        $sortedRaw = StockLot::query()->where('sorted_at', '>=', $from)->where('sorted_at', '<=', $to)
+            ->selectRaw('COALESCE(SUM(weight_kg), 0) AS total')->value('total');
+        $sorted = $this->toMilli((string) $sortedRaw);
+        $warehouse = 0;
+        $openPurchases = Purchase::query()->whereNull('closed_at')->withSum('stockLots as sorted_kg', 'weight_kg')->get();
+        foreach ($openPurchases as $purchase) {
+            $warehouse += max(0, $this->toMilli((string) $purchase->gross_weight_kg)
+                - $this->toMilli((string) ($purchase->sorted_kg ?? '0')));
         }
+
+        $closedPurchases = Purchase::query()->withSum('stockLots as sorted_kg', 'weight_kg')
+            ->whereNotNull('closed_at')->where('closed_at', '>=', $start)->where('closed_at', '<', $end)
+            ->get();
+        $cleaningKg = $cleaningValue = 0;
+        foreach ($closedPurchases as $purchase) {
+            $unsorted = max(0, $this->toMilli((string) $purchase->gross_weight_kg)
+                - $this->toMilli((string) ($purchase->sorted_kg ?? '0')));
+            $cleaningKg += $unsorted;
+            $cleaningValue += $this->valueForWeight($unsorted, (int) $purchase->price_per_kg);
+        }
+
+        $soldRows = TransactionItem::query()->join('transactions', 'transactions.id', '=', 'transaction_items.transaction_id')
+            ->where('transactions.status', 'completed')->where('transactions.occurred_at', '>=', $start)->where('transactions.occurred_at', '<', $end)
+            ->select('transaction_items.product_id')->selectRaw('SUM(transaction_items.weight_kg) AS sold_kg')
+            ->groupBy('transaction_items.product_id')->get()->keyBy('product_id');
+        $countRows = StockCount::query()->where('status', 'active')->where('counted_at', '>=', $start)->where('counted_at', '<', $end)
+            ->select('product_id')->selectRaw('SUM(CASE WHEN diff_kg < 0 THEN -diff_kg ELSE 0 END) AS shrink_kg, SUM(loss_value) AS shrink_value')
+            ->groupBy('product_id')->get()->keyBy('product_id');
+        $lastCounts = StockCount::query()->where('status', 'active')->where('counted_at', '<', $end)
+            ->orderByDesc('counted_at')->orderByDesc('id')->get(['product_id', 'counted_at'])->unique('product_id')->keyBy('product_id');
+        $balances = StockMovement::query()->select('product_id')
+            ->selectRaw('COALESCE(SUM(weight_kg), 0) AS stock_kg, COALESCE(SUM(value_delta), 0) AS stock_value')
+            ->groupBy('product_id')->get()->keyBy('product_id');
+
+        $display = $shortfall = $stockValue = $sold = $displayShrink = $displayShrinkValue = 0;
         $productRows = [];
-        $soldTotal = $shortfallTotal = 0;
-        foreach ($products as $product) {
-            $stock = $this->sumMovementWeights($product->stockMovements);
-            $stockReady += $stock;
-            $value = 0;
-            foreach ($product->stockLots as $lot) {
-                $remaining = $this->sumMovementWeights($lot->movements);
-                if ($remaining > 0) {
-                    $value += intdiv(($remaining * (int) $lot->unit_cost) + 500, 1000);
-                }
-            }
-            $stockValue += $value;
-            $productSold = $soldRows->get($product->id);
-            $soldMilli = $productSold ? $this->toMilli((string) $productSold->sold) : 0;
-            $soldTotal += $soldMilli;
-            $productShortfall = $this->toMilli((string) ($shortfallRows->get($product->id)->shortfall ?? '0'));
-            $shortfallTotal += $productShortfall;
-            $productCounts = $counts->where('product_id', $product->id);
-            $productShrink = $productShrinkValue = 0;
-            $lastCountDate = null;
-            foreach ($productCounts as $count) {
-                $productShrink += $this->toMilli((string) $count->diff_kg);
-                $productShrinkValue += (int) $count->loss_value;
-            }
+        foreach (Product::query()->orderBy('name')->get() as $product) {
+            $balance = $balances->get($product->id);
+            $stockMilli = $this->toMilli((string) ($balance->stock_kg ?? '0'));
+            $value = (int) ($balance->stock_value ?? 0);
+            $productSold = $this->toMilli((string) ($soldRows->get($product->id)->sold_kg ?? '0'));
+            $count = $countRows->get($product->id);
+            $productShrink = $this->toMilli((string) ($count->shrink_kg ?? '0'));
+            $productShrinkValue = (int) ($count->shrink_value ?? 0);
             $lastCount = $lastCounts->get($product->id);
-            if ($lastCount) $lastCountDate = Carbon::parse($lastCount->counted_at)->setTimezone('Asia/Jakarta')->toDateString();
-            $received = 0;
-            foreach ($movements->where('product_id', $product->id) as $movement) {
-                if ($movement->type === 'in_clean' && $this->toMilli((string) $movement->weight_kg) > 0) $received += $this->toMilli((string) $movement->weight_kg);
-            }
+            $display += max(0, $stockMilli);
+            $shortfall += max(0, -$stockMilli);
+            $stockValue += $value;
+            $sold += $productSold;
+            $displayShrink += $productShrink;
+            $displayShrinkValue += $productShrinkValue;
             $productRows[] = [
-                'product_id' => (int) $product->id, 'name' => $product->name, 'is_active' => (bool) $product->is_active,
-                'stock_kg' => $this->formatWeight($stock), 'stock_value' => (int) $value,
-                'shortfall_kg' => $this->formatWeight($productShortfall),
-                'sold_kg' => $this->formatWeight($soldMilli), 'display_shrink_kg' => $this->formatWeight($productShrink),
-                'display_shrink_value' => (int) $productShrinkValue, 'last_count_date' => $lastCountDate,
+                'product_id' => (int) $product->id, 'name' => $product->name, 'jenis' => $product->jenis,
+                'is_active' => (bool) $product->is_active, 'stock_kg' => $this->formatWeight($stockMilli),
+                'shortfall_kg' => $this->formatWeight(max(0, -$stockMilli)), 'stock_value' => $value,
+                'avg_cost' => $stockMilli > 0 ? $this->averageCostFor($stockMilli, $value) : null,
+                'sold_kg' => $this->formatWeight($productSold), 'display_shrink_kg' => $this->formatWeight($productShrink),
+                'display_shrink_value' => $productShrinkValue,
+                'last_count_date' => $lastCount ? Carbon::parse($lastCount->counted_at)->setTimezone('Asia/Jakarta')->toDateString() : null,
             ];
         }
+        $averagePurchasePrice = $purchaseGross > 0 ? $this->divideHalfUp($purchasesCost * 1000, $purchaseGross) : null;
+
         return [
             'from' => $from, 'to' => $to, 'incoming_gross_kg' => $this->formatWeight($incoming),
-            'pending_gross_kg' => $this->formatWeight($pending), 'clean_kg' => $this->formatWeight($clean),
-            'cleaning_shrink_kg' => $this->formatWeight($cleaningShrink), 'sold_kg' => $this->formatWeight($soldTotal),
-            'display_shrink_kg' => $this->formatWeight($displayShrink), 'display_shrink_value' => (int) $displayShrinkValue,
-            'stock_ready_kg' => $this->formatWeight($stockReady), 'shortfall_kg' => $this->formatWeight($shortfallTotal),
-            'stock_value' => (int) $stockValue, 'products' => $productRows,
+            'sorted_kg' => $this->formatWeight($sorted), 'warehouse_kg' => $this->formatWeight($warehouse),
+            'display_kg' => $this->formatWeight($display), 'shortfall_kg' => $this->formatWeight($shortfall),
+            'sold_kg' => $this->formatWeight($sold), 'display_shrink_kg' => $this->formatWeight($displayShrink),
+            'display_shrink_value' => $displayShrinkValue, 'cleaning_shrink_kg' => $this->formatWeight($cleaningKg),
+            'cleaning_loss_value' => $cleaningValue, 'susut_kg' => $this->formatWeight($susut),
+            'avg_purchase_price_per_kg' => $averagePurchasePrice,
+            'susut_value_estimate' => $averagePurchasePrice === null ? null : $this->valueForWeight($susut, $averagePurchasePrice),
+            'stock_value' => $stockValue, 'products' => $productRows,
         ];
     }
 
@@ -249,6 +261,7 @@ final class ReportService
     public function shifts(array $filters): array
     {
         [$start, $end] = $this->dateBounds((string) $filters['date'], (string) $filters['date']);
+
         return Transaction::query()
             ->select('cashier_id')
             ->selectRaw('sum(case when status = ? then 1 else 0 end) as transaction_count', ['completed'])
@@ -278,10 +291,12 @@ final class ReportService
         $period = $filters['period'] ?? 'monthly';
         if ($period === 'daily') {
             $date = (string) $filters['date'];
+
             return [$date, $date, 'daily', ['key' => 'date', 'value' => $date]];
         }
         $month = (string) ($filters['month'] ?? Carbon::now('Asia/Jakarta')->format('Y-m'));
         $start = Carbon::createFromFormat('!Y-m', $month, 'Asia/Jakarta')->startOfMonth();
+
         return [$start->toDateString(), $start->copy()->endOfMonth()->toDateString(), 'monthly', ['key' => 'month', 'value' => $month]];
     }
 
@@ -301,17 +316,8 @@ final class ReportService
             return [(string) $filters['date'], (string) $filters['date']];
         }
         $now = Carbon::now('Asia/Jakarta');
+
         return [$now->copy()->startOfMonth()->toDateString(), $now->toDateString()];
-    }
-
-    private function sumMovementWeights(iterable $movements): int
-    {
-        $total = 0;
-        foreach ($movements as $movement) {
-            $total += $this->toMilli((string) $movement->weight_kg);
-        }
-
-        return $total;
     }
 
     private function toMilli(string $weight): int
@@ -330,5 +336,34 @@ final class ReportService
         $absolute = abs($milli);
 
         return $sign.intdiv($absolute, 1000).'.'.str_pad((string) ($absolute % 1000), 3, '0', STR_PAD_LEFT);
+    }
+
+    private function valueForWeight(int $weightMilli, int $pricePerKg): int
+    {
+        $numerator = bcmul((string) $weightMilli, (string) $pricePerKg, 0);
+        $quotient = (int) bcdiv($numerator, '1000', 0);
+        $remainder = (int) bcmod($numerator, '1000');
+
+        return $quotient + ($remainder * 2 >= 1000 ? 1 : 0);
+    }
+
+    private function divideHalfUp(int $numerator, int $denominator): int
+    {
+        $quotient = intdiv($numerator, $denominator);
+        $remainder = $numerator % $denominator;
+
+        return $quotient + ($remainder * 2 >= $denominator ? 1 : 0);
+    }
+
+    private function averageCostFor(int $stockMilli, int $stockValue): int
+    {
+        $numerator = bcmul((string) $stockValue, '1000', 0);
+        $negative = str_starts_with($numerator, '-');
+        $absolute = ltrim($numerator, '-');
+        $quotient = (int) bcdiv($absolute, (string) $stockMilli, 0);
+        $remainder = (int) bcmod($absolute, (string) $stockMilli);
+        $result = $quotient + ($remainder * 2 >= $stockMilli ? 1 : 0);
+
+        return $negative ? -$result : $result;
     }
 }

@@ -22,7 +22,6 @@ class UpdateProductRequest extends FormRequest
                 Rule::unique('products', 'name')->ignore($this->route('product')),
             ],
             'price_retail' => ['required', 'integer', 'min:0'],
-            'price_3kg' => ['required', 'integer', 'min:0'],
             'price_5kg' => ['required', 'integer', 'min:0'],
         ];
     }

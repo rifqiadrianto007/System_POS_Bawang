@@ -10,37 +10,16 @@ class PurchaseResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'id' => $this->id,
-            'supplier_id' => $this->supplier_id,
-            'supplier' => new SupplierResource($this->whenLoaded('supplier')),
-            'purchased_at' => $this->purchased_at?->format('Y-m-d'),
-            'gross_weight_kg' => $this->formatWeight($this->gross_weight_kg),
-            'price_per_kg' => $this->price_per_kg,
-            'total_cost' => $this->total_cost,
-            'notes' => $this->notes,
-            'status' => $this->status,
-            'editable' => (bool) $this->editable,
-            'lots_total_kg' => $this->lots_total_kg,
-            'cleaning_shrink_kg' => $this->cleaning_shrink_kg,
-            'cost_per_clean_kg' => $this->cost_per_clean_kg,
-            'clean_weight_kg' => $this->formatNullableWeight($this->clean_weight_kg),
-            'finalized_at' => $this->finalized_at?->toIso8601String(),
-            'created_by' => $this->created_by,
-            'lots' => StockLotResource::collection($this->whenLoaded('stockLots')),
-            'shortfall_resolved' => $this->when(isset($this->shortfall_resolved), $this->shortfall_resolved),
+            'id' => (int) $this->id, 'code' => $this->code,
+            'supplier' => ['id' => (int) $this->supplier->id, 'name' => $this->supplier->name],
+            'purchased_at' => $this->purchased_at->format('Y-m-d'), 'jenis' => $this->jenis,
+            'gross_weight_kg' => (string) $this->gross_weight_kg, 'price_per_kg' => (int) $this->price_per_kg,
+            'total_cost' => (int) $this->total_cost, 'sorting_status' => $this->sorting_status,
+            'sorted_kg' => $this->sorted_kg, 'unsorted_kg' => $this->unsorted_kg,
+            'sold_kg' => $this->sold_kg, 'susut_kg' => $this->susut_kg, 'susut_final' => (bool) $this->susut_final,
+            'can_edit' => (bool) $this->can_edit, 'can_delete' => (bool) $this->can_delete,
+            'can_add_lot' => (bool) $this->can_add_lot, 'notes' => $this->notes ?? '',
+            'closed_at' => $this->closed_at?->toIso8601String(), 'lots' => $this->lots ?? [],
         ];
-    }
-
-    private function formatNullableWeight(mixed $weight): ?string
-    {
-        return $weight === null ? null : $this->formatWeight($weight);
-    }
-
-    private function formatWeight(mixed $weight): string
-    {
-        $value = (string) $weight;
-        [$whole, $fraction] = array_pad(explode('.', $value, 2), 2, '');
-
-        return $whole.'.'.str_pad(substr($fraction, 0, 3), 3, '0');
     }
 }

@@ -107,14 +107,13 @@ final class PricingService
             return '5kg';
         }
 
-        return $weightMilli >= 3000 ? '3kg' : 'retail';
+        return 'retail';
     }
 
     private function priceForTier(Product $product, string $tier): int
     {
         return match ($tier) {
             'retail' => (int) $product->price_retail,
-            '3kg' => (int) $product->price_3kg,
             '5kg' => (int) $product->price_5kg,
         };
     }

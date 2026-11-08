@@ -3,83 +3,53 @@
 namespace App\Services;
 
 use App\Models\Product;
+use App\Models\StockMovement;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 
 final class ProductCatalogService
 {
-    /** @param array<string, mixed> $filters
-     *  @return Collection<int, Product>
-     */
+    public function __construct(private readonly AverageCostService $averageCost) {}
+
+    /** @param array<string,mixed> $filters @return Collection<int,Product> */
     public function list(array $filters, string $role): Collection
     {
-        $products = Product::query()
-            ->select('products.*')
-            ->selectSub(
-                DB::table('stock_movements')
-                    ->selectRaw('COALESCE(SUM(weight_kg), 0)')
-                    ->whereColumn('stock_movements.product_id', 'products.id'),
-                'ledger_stock_kg'
-            )
-            ->selectSub(
-                DB::table('stock_lots')
-                    ->join('purchases', 'purchases.id', '=', 'stock_lots.purchase_id')
-                    ->joinSub(
-                        DB::table('stock_movements')
-                            ->select('lot_id')
-                            ->selectRaw('SUM(weight_kg) as remaining_weight_kg')
-                            ->whereNotNull('lot_id')
-                            ->groupBy('lot_id'),
-                        'lot_balances',
-                        'lot_balances.lot_id',
-                        '=',
-                        'stock_lots.id'
-                    )
-                    ->selectRaw('COALESCE(SUM(ROUND(lot_balances.remaining_weight_kg * stock_lots.unit_cost, 0)), 0)')
-                    ->whereColumn('stock_lots.product_id', 'products.id')
-                    ->where('purchases.status', 'finalized')
-                    ->whereNotNull('stock_lots.unit_cost'),
-                'ledger_stock_value'
-            )
-            ->selectSub(
-                DB::table('sale_allocations')
-                    ->join('transaction_items', 'transaction_items.id', '=', 'sale_allocations.transaction_item_id')
-                    ->join('transactions', 'transactions.id', '=', 'transaction_items.transaction_id')
-                    ->selectRaw('COALESCE(SUM(sale_allocations.weight_kg), 0)')
-                    ->whereColumn('transaction_items.product_id', 'products.id')
-                    ->where('transactions.status', 'completed')
-                    ->where('sale_allocations.is_shortfall', true),
-                'shortfall_weight_kg'
-            );
-
+        $query = Product::query();
         if ($role === 'kasir') {
-            $products->where('is_active', true);
+            $query->where('is_active', true);
         } elseif (isset($filters['active'])) {
-            $products->where('is_active', (bool) (int) $filters['active']);
+            $query->where('is_active', (bool) (int) $filters['active']);
         }
 
-        return $products->orderBy('name')->get()->map(function (Product $product) use ($role): Product {
-            if ($role === 'owner') {
-                $product->setAttribute('stock_kg', $this->formatWeight((string) $product->getAttribute('ledger_stock_kg')));
-                $product->setAttribute('stock_value', (int) $product->getAttribute('ledger_stock_value'));
-                $product->setAttribute('shortfall_kg', $this->formatWeight((string) $product->getAttribute('shortfall_weight_kg')));
+        $products = $query->orderBy('name')->get();
+        if ($role !== 'owner' || $products->isEmpty()) {
+            return $products;
+        }
+        $balances = StockMovement::query()->whereIn('product_id', $products->modelKeys())
+            ->select('product_id')->selectRaw('COALESCE(SUM(weight_kg),0) AS stock_kg, COALESCE(SUM(value_delta),0) AS stock_value')
+            ->groupBy('product_id')->get()->keyBy('product_id');
+
+        return $products->map(function (Product $product) use ($balances): Product {
+            $row = $balances->get($product->id);
+            $stockMilli = $this->averageCost->toMilli((string) ($row->stock_kg ?? '0'));
+            $stockValue = (int) ($row->stock_value ?? 0);
+            $avgCost = null;
+            if ($stockMilli > 0) {
+                $numerator = bcmul((string) $stockValue, '1000', 0);
+                $negative = str_starts_with($numerator, '-');
+                $absolute = ltrim($numerator, '-');
+                $quotient = (int) bcdiv($absolute, (string) $stockMilli, 0);
+                $remainder = (int) bcmod($absolute, (string) $stockMilli);
+                $avgCost = $quotient + ($remainder * 2 >= $stockMilli ? 1 : 0);
+                if ($negative) {
+                    $avgCost *= -1;
+                }
             }
+            $product->setAttribute('stock_kg', $this->averageCost->formatWeight($stockMilli));
+            $product->setAttribute('stock_value', $stockValue);
+            $product->setAttribute('avg_cost', $avgCost);
+            $product->setAttribute('shortfall_kg', $this->averageCost->formatWeight(max(0, -$stockMilli)));
 
             return $product;
         });
-    }
-
-    private function formatWeight(string $weight): string
-    {
-        $normalized = trim($weight);
-        $negative = str_starts_with($normalized, '-');
-        $normalized = ltrim($normalized, '+-');
-        [$whole, $fraction] = array_pad(explode('.', $normalized, 2), 2, '');
-        $whole = ltrim($whole, '0');
-        $whole = $whole === '' ? '0' : $whole;
-        $fraction = str_pad(substr($fraction, 0, 3), 3, '0');
-        $formatted = $whole.'.'.$fraction;
-
-        return $negative && $formatted !== '0.000' ? '-'.$formatted : $formatted;
     }
 }

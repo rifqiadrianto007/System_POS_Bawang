@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Product extends Model
 {
-    protected $fillable = ['name', 'price_retail', 'price_3kg', 'price_5kg', 'is_active'];
+    protected $fillable = ['name', 'jenis', 'price_retail', 'price_5kg', 'last_unit_cost', 'is_active'];
 
     protected function casts(): array
     {

@@ -20,7 +20,8 @@ class PurchaseIndexRequest extends FormRequest
             'per_page' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'from' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'to' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
-            'status' => ['sometimes', 'nullable', 'in:open,finalized'],
+            'jenis' => ['sometimes', 'nullable', 'in:merah,putih'],
+            'sorting' => ['sometimes', 'nullable', 'in:unsorted,sorting,closed'],
             'include' => ['sometimes', 'nullable', 'in:lots'],
         ];
     }

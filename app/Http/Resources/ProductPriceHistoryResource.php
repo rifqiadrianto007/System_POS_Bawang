@@ -13,7 +13,6 @@ class ProductPriceHistoryResource extends JsonResource
             'id' => $this->id,
             'product_id' => $this->product_id,
             'price_retail' => $this->price_retail,
-            'price_3kg' => $this->price_3kg,
             'price_5kg' => $this->price_5kg,
             'changed_by' => $this->changed_by,
             'changed_at' => $this->changed_at?->toIso8601String(),

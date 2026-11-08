@@ -30,6 +30,6 @@ final class TransactionReceiptService
             ]);
         }
 
-        return $transaction->load(['items.saleAllocations', 'cashier']);
+        return $transaction->load(['items', 'cashier']);
     }
 }

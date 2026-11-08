@@ -5,16 +5,19 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class StockLot extends Model
 {
-    protected $fillable = ['purchase_id', 'product_id', 'clean_weight_kg', 'unit_cost', 'cleaned_at', 'notes'];
+    use SoftDeletes;
+
+    protected $fillable = ['purchase_id', 'product_id', 'weight_kg', 'sorted_at', 'unit_cost', 'notes', 'created_by'];
 
     protected function casts(): array
     {
         return [
-            'clean_weight_kg' => 'decimal:3',
-            'cleaned_at' => 'date',
+            'weight_kg' => 'decimal:3',
+            'sorted_at' => 'date',
         ];
     }
 
@@ -31,10 +34,5 @@ class StockLot extends Model
     public function movements(): HasMany
     {
         return $this->hasMany(StockMovement::class, 'lot_id');
-    }
-
-    public function saleAllocations(): HasMany
-    {
-        return $this->hasMany(SaleAllocation::class, 'lot_id');
     }
 }

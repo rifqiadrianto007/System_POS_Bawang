@@ -6,9 +6,9 @@ use App\Http\Requests\TransactionIndexRequest;
 use App\Http\Resources\TransactionHistoryResource;
 use App\Models\Transaction;
 use App\Support\BusinessDay;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
-use Carbon\Carbon;
 
 class TransactionHistoryController extends Controller
 {
@@ -18,7 +18,7 @@ class TransactionHistoryController extends Controller
 
         $query = Transaction::query()
             ->with(['cashier:id,name'])
-            ->with(['items.saleAllocations'])
+            ->with(['items'])
             ->withCount('items')
             ->withSum('items', 'weight_kg');
         $this->applyBounds($query, $start, $end);
@@ -31,12 +31,7 @@ class TransactionHistoryController extends Controller
 
         $query->orderByDesc('occurred_at')->orderByDesc('id');
         if ($request->user()?->role === 'owner') {
-            $query->withExists([
-                'items as has_shortfall' => fn ($items) => $items->whereHas(
-                    'saleAllocations',
-                    fn ($allocations) => $allocations->where('is_shortfall', true)
-                ),
-            ]);
+            $query->withExists(['items as has_shortfall' => fn ($items) => $items->where('shortfall_kg', '>', 0)]);
         }
         $perPage = min($request->integer('per_page', 20), 50);
         $page = $query->paginate($perPage, ['*'], 'page', $request->integer('page', 1));

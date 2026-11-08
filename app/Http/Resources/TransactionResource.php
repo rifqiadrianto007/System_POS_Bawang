@@ -33,9 +33,7 @@ class TransactionResource extends JsonResource
 
         if ($request->user()?->role === 'owner') {
             $data['cogs'] = $this->items->sum('cogs');
-            $data['has_shortfall'] = $this->items
-                ->flatMap(fn ($item) => $item->saleAllocations ?? collect())
-                ->contains(fn ($allocation): bool => $allocation->is_shortfall);
+            $data['has_shortfall'] = $this->items->contains(fn ($item): bool => bccomp((string) $item->shortfall_kg, '0', 3) > 0);
         }
 
         return $data;
