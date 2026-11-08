@@ -27,30 +27,31 @@ function paymentRulesSetup(): array
     ]);
     $supplier = Supplier::query()->create(['name' => 'Supplier Payment Rules']);
     $purchase = Purchase::query()->create([
+        'code' => 'KLK-261024-001',
         'supplier_id' => $supplier->id,
         'purchased_at' => '2026-10-24',
+        'jenis' => 'merah',
         'gross_weight_kg' => '3.000',
         'price_per_kg' => 10000,
         'total_cost' => 30000,
-        'status' => 'finalized',
-        'cost_per_clean_kg' => 10000,
-        'clean_weight_kg' => '3.000',
-        'finalized_at' => '2026-10-24 01:00:00',
         'created_by' => $cashier->id,
     ]);
     $lot = StockLot::query()->create([
         'purchase_id' => $purchase->id,
         'product_id' => $product->id,
-        'clean_weight_kg' => '3.000',
+        'weight_kg' => '3.000',
+        'sorted_at' => '2026-10-24',
+        'created_by' => $cashier->id,
         'unit_cost' => 10000,
-        'cleaned_at' => '2026-10-24',
     ]);
     StockMovement::query()->create([
         'product_id' => $product->id,
         'lot_id' => $lot->id,
-        'type' => 'in_clean',
+        'type' => 'in_sort',
         'weight_kg' => '3.000',
-        'unit_cost' => 10000,
+        'value_delta' => 30000,
+        'ref_type' => Purchase::class,
+        'ref_id' => $purchase->id,
         'occurred_at' => '2026-10-24 01:00:00',
         'created_by' => $cashier->id,
     ]);

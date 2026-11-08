@@ -1,14 +1,13 @@
 <?php
 
 use App\Models\Product;
-use App\Models\SaleAllocation;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
 use App\Models\User;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Database\Events\QueryExecuted;
 
 uses(RefreshDatabase::class);
 
@@ -55,13 +54,7 @@ function historyPrivacyTransaction(User $cashier, string $occurredAt, array $ove
         'line_total' => 75000,
         'cogs' => 63750,
     ]);
-    SaleAllocation::query()->create([
-        'transaction_item_id' => $item->id,
-        'lot_id' => null,
-        'weight_kg' => '2.727',
-        'unit_cost' => 23400,
-        'is_shortfall' => true,
-    ]);
+    $item->update(['shortfall_kg' => '2.727']);
 
     return $transaction;
 }
@@ -185,8 +178,7 @@ it('does not select item cost columns or allocation relations for cashier respon
     DB::listen(function (QueryExecuted $query) use (&$costReads): void {
         $sql = strtolower(ltrim($query->sql));
         if (str_starts_with($sql, 'select') && (
-            str_contains($sql, 'sale_allocations')
-            || (str_contains($sql, 'transaction_items') && preg_match('/\bcogs\b/', $sql) === 1)
+            (str_contains($sql, 'transaction_items') && preg_match('/\bcogs\b/', $sql) === 1)
         )) {
             $costReads[] = $query->sql;
         }

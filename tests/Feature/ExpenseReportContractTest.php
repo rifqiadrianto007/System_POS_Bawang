@@ -10,7 +10,7 @@ uses(RefreshDatabase::class);
 beforeEach(function (): void {
     config(['app.debug' => false]);
     Carbon::setTestNow(Carbon::parse('2026-10-27 10:00:00', 'Asia/Jakarta'));
-    app(\Database\Seeders\DatabaseSeeder::class)->run();
+    \Tests\Support\DemoData::seed();
     Sanctum::actingAs(User::query()->where('username', 'owner')->firstOrFail());
 });
 

@@ -32,6 +32,7 @@ function purchasePayload(int $supplierId): array
     return [
         'supplier_id' => $supplierId,
         'purchased_at' => '2026-10-22',
+        'jenis' => 'merah',
         'gross_weight_kg' => '100.000',
         'price_per_kg' => 17000,
         'notes' => 'Bawang kotor',
@@ -72,11 +73,11 @@ it('allows an owner to create and view a purchase with rounded total cost', func
     $created = $this->withToken($token)
         ->postJson('/api/v1/purchases', purchasePayload($supplier->id))
         ->assertCreated()
-        ->assertJsonPath('data.supplier_id', $supplier->id)
+        ->assertJsonPath('data.supplier.id', $supplier->id)
         ->assertJsonPath('data.gross_weight_kg', '100.000')
         ->assertJsonPath('data.price_per_kg', 17000)
         ->assertJsonPath('data.total_cost', 1700000)
-        ->assertJsonPath('data.status', 'open');
+        ->assertJsonPath('data.sorting_status', 'unsorted');
 
     $purchase = Purchase::query()->findOrFail($created->json('data.id'));
     expect($purchase->created_by)->toBe($owner->id)
@@ -101,6 +102,7 @@ it('rounds fractional purchase cost half up without floating point arithmetic', 
     $response = $this->withToken($token)->postJson('/api/v1/purchases', [
         'supplier_id' => $supplier->id,
         'purchased_at' => '2026-10-22',
+        'jenis' => 'merah',
         'gross_weight_kg' => '0.333',
         'price_per_kg' => 17001,
     ]);

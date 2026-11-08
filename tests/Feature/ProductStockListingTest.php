@@ -31,15 +31,17 @@ function catalogLot(Product $product, string $weight, int $unitCost): StockLot
     $owner = User::query()->where('role', 'owner')->first() ?? User::factory()->create(['role' => 'owner']);
     $supplier = Supplier::query()->create(['name' => 'Pemasok '.$product->id]);
     $purchase = Purchase::query()->create([
+        'code' => 'KLK-261022-'.str_pad((string) (Purchase::withTrashed()->count() + 1), 3, '0', STR_PAD_LEFT),
         'supplier_id' => $supplier->id, 'purchased_at' => '2026-10-22', 'gross_weight_kg' => $weight,
-        'price_per_kg' => $unitCost, 'total_cost' => 0, 'status' => 'finalized', 'created_by' => $owner->id,
+        'jenis' => 'merah', 'price_per_kg' => $unitCost, 'total_cost' => 0, 'created_by' => $owner->id,
     ]);
     $lot = $purchase->stockLots()->create([
-        'product_id' => $product->id, 'clean_weight_kg' => $weight, 'unit_cost' => $unitCost, 'cleaned_at' => '2026-10-22',
+        'product_id' => $product->id, 'weight_kg' => $weight, 'unit_cost' => $unitCost,
+        'sorted_at' => '2026-10-22', 'created_by' => $owner->id,
     ]);
     StockMovement::query()->create([
-        'product_id' => $product->id, 'lot_id' => $lot->id, 'type' => 'in_clean', 'weight_kg' => $weight,
-        'unit_cost' => $unitCost, 'occurred_at' => '2026-10-22 00:00:00', 'created_by' => $owner->id,
+        'product_id' => $product->id, 'lot_id' => $lot->id, 'type' => 'in_sort', 'weight_kg' => $weight,
+        'value_delta' => (int) bcmul($weight, (string) $unitCost, 0), 'occurred_at' => '2026-10-22 00:00:00', 'created_by' => $owner->id,
     ]);
 
     return $lot;
@@ -53,7 +55,7 @@ it('PR-01 returns every product to owner with ledger weight and per-lot rounded 
     $lotB = catalogLot($active, '10.000', 23000);
     StockMovement::query()->create([
         'product_id' => $active->id, 'lot_id' => $lotA->id, 'type' => 'sale', 'weight_kg' => '-1.000',
-        'unit_cost' => 21250, 'occurred_at' => '2026-10-23 00:00:00',
+        'value_delta' => -21250, 'occurred_at' => '2026-10-23 00:00:00',
     ]);
 
     $response = $this->withToken($token)->getJson('/api/v1/products')->assertOk()->assertJsonCount(2, 'data');

@@ -20,7 +20,6 @@ it('creates every table required by the data model', function () {
         'stock_counts',
         'transactions',
         'transaction_items',
-        'sale_allocations',
         'expenses',
         'audit_logs',
     ];
@@ -28,6 +27,7 @@ it('creates every table required by the data model', function () {
     foreach ($tables as $table) {
         expect(Schema::hasTable($table))->toBeTrue();
     }
+    expect(Schema::hasTable('sale_allocations'))->toBeFalse();
 });
 
 it('stores the business fields and relationships from the data model', function () {
@@ -38,12 +38,13 @@ it('stores the business fields and relationships from the data model', function 
     $product = Product::query()->create([
         'name' => 'Merah A',
         'price_retail' => 27500,
-        'price_3kg' => 26000,
         'price_5kg' => 24000,
     ]);
     $supplier = Supplier::query()->create(['name' => 'Supplier A']);
     $purchase = $supplier->purchases()->create([
+        'code' => 'KLK-261019-001',
         'purchased_at' => '2026-10-19',
+        'jenis' => 'merah',
         'gross_weight_kg' => '100.000',
         'price_per_kg' => 17000,
         'total_cost' => 1700000,
@@ -51,8 +52,10 @@ it('stores the business fields and relationships from the data model', function 
     ]);
     $lot = $purchase->stockLots()->create([
         'product_id' => $product->id,
-        'clean_weight_kg' => '40.000',
-        'cleaned_at' => '2026-10-19',
+        'weight_kg' => '40.000',
+        'sorted_at' => '2026-10-19',
+        'unit_cost' => 17000,
+        'created_by' => $owner->id,
     ]);
     $transaction = $owner->cashierTransactions()->create([
         'invoice_no' => 'POS-261019-0001',

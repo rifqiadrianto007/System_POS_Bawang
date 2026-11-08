@@ -3,7 +3,6 @@
 use App\Models\Product;
 use App\Services\PricingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use InvalidArgumentException;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -13,7 +12,6 @@ function pricingProduct(string $name = 'Merah A'): Product
     return Product::query()->create([
         'name' => $name,
         'price_retail' => 27500,
-        'price_3kg' => 26000,
         'price_5kg' => 24000,
     ]);
 }
@@ -33,19 +31,19 @@ it('calculates the documented retail rounding examples', function (string $weigh
     ['1.500', 41300],
 ]);
 
-it('selects the 3kg and 5kg tiers for ecer customers', function () {
+it('uses retail below 5kg and the 5kg tier at or above 5kg for ecer customers', function () {
     $product = pricingProduct();
     $service = app(PricingService::class);
 
-    $threeKg = $service->quoteCart('ecer', [
+    $fourKg = $service->quoteCart('ecer', [
         ['product_id' => $product->id, 'weight_kg' => '4.000'],
     ]);
     $fiveKg = $service->quoteCart('ecer', [
         ['product_id' => $product->id, 'weight_kg' => '5.000'],
     ]);
 
-    expect($threeKg['items'][0]['price_tier'])->toBe('3kg')
-        ->and($threeKg['items'][0]['line_total'])->toBe(104000)
+    expect($fourKg['items'][0]['price_tier'])->toBe('retail')
+        ->and($fourKg['items'][0]['line_total'])->toBe(110000)
         ->and($fiveKg['items'][0]['price_tier'])->toBe('5kg')
         ->and($fiveKg['items'][0]['line_total'])->toBe(120000);
 });

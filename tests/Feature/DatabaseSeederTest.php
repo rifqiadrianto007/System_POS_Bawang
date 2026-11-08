@@ -1,52 +1,92 @@
 <?php
 
+use App\Models\Expense;
 use App\Models\Product;
+use App\Models\Purchase;
+use App\Models\StockCount;
 use App\Models\Supplier;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 
 uses(RefreshDatabase::class);
 
-it('seeds one owner, two cashiers, four active products plus one inactive product, and two suppliers', function () {
+it('seeds exactly one owner and one cashier, and can be run repeatedly', function () {
+    $this->seed();
     $this->seed();
 
-    expect(User::query()->where('role', 'owner')->count())->toBe(1)
-        ->and(User::query()->where('role', 'kasir')->count())->toBe(2)
-        ->and(Product::query()->count())->toBe(5)
-        ->and(Product::query()->where('is_active', true)->count())->toBe(4)
-        ->and(Product::query()->where('is_active', false)->count())->toBe(1)
-        ->and(Supplier::query()->count())->toBe(2)
-        ->and(Supplier::query()->pluck('name')->all())
-        ->toEqualCanonicalizing(['Supplier Bawang Merah', 'Supplier Bawang Putih']);
+    expect(User::query()->count())->toBe(2)
+        ->and(User::query()->where('role', 'owner')->count())->toBe(1)
+        ->and(User::query()->where('role', 'kasir')->count())->toBe(1)
+        ->and(User::query()->pluck('username')->all())->toEqualCanonicalizing(['owner', 'kasir'])
+        ->and(Product::query()->count())->toBe(0)
+        ->and(Supplier::query()->count())->toBe(0)
+        ->and(Purchase::query()->count())->toBe(0)
+        ->and(Transaction::query()->count())->toBe(0)
+        ->and(Expense::query()->count())->toBe(0)
+        ->and(StockCount::query()->count())->toBe(0);
 });
 
-it('seeds the documented Merah A prices', function () {
-    $this->seed();
+it('uses the configured environment passwords for both accounts', function () {
+    $passwords = [
+        'SEED_OWNER_PASSWORD' => 'owner-seed-password',
+        'SEED_KASIR_PASSWORD' => 'kasir-seed-password',
+    ];
+    $previous = [];
+    foreach ($passwords as $key => $value) {
+        $previous[$key] = getenv($key);
+        putenv($key.'='.$value);
+        $_ENV[$key] = $value;
+        $_SERVER[$key] = $value;
+    }
 
-    $product = Product::query()->where('name', 'Merah A')->firstOrFail();
+    try {
+        $this->seed();
 
-    expect($product->price_retail)->toBe(27500)
-        ->and($product->price_3kg)->toBe(26000)
-        ->and($product->price_5kg)->toBe(24000)
-        ->and($product->is_active)->toBeTrue();
+        foreach ([
+            'owner' => 'owner-seed-password',
+            'kasir' => 'kasir-seed-password'
+        ] as $username => $password) {
+            expect(Hash::check($password, User::query()->where('username', $username)->firstOrFail()->password))->toBeTrue();
+        }
+    } finally {
+        foreach ($previous as $key => $value) {
+            if ($value === false) {
+                putenv($key);
+                unset($_ENV[$key], $_SERVER[$key]);
+            } else {
+                putenv($key.'='.$value);
+                $_ENV[$key] = $value;
+                $_SERVER[$key] = $value;
+            }
+        }
+    }
 });
 
-it('seeds twenty transactions with overpayments, one discounted overpayment, and calculable net sales', function () {
-    $this->seed();
+it('refuses production seeding when any account password is missing', function () {
+    $keys = ['SEED_OWNER_PASSWORD', 'SEED_KASIR_PASSWORD'];
+    $previous = [];
+    foreach ($keys as $key) {
+        $previous[$key] = getenv($key);
+        putenv($key);
+        unset($_ENV[$key], $_SERVER[$key]);
+    }
 
-    $transactions = Transaction::query()->orderBy('id')->get();
-    $discounted = $transactions->firstWhere('discount', '>', 0);
+    config(['app.env' => 'production']);
 
-    expect($transactions)->toHaveCount(20)
-        ->and($transactions->filter(fn (Transaction $transaction): bool => (int) $transaction->amount_paid > (int) $transaction->total))->toHaveCount(7)
-        ->and($discounted->subtotal)->toBe(75000)
-        ->and($discounted->total)->toBe(70000)
-        ->and($discounted->amount_paid)->toBe(100000)
-        ->and((int) $transactions->where('status', 'completed')->sum('total'))->toBe(182600)
-        ->and($transactions->where('status', 'void'))->toHaveCount(1);
-
-    expect($transactions[0]->occurred_at->copy()->utc()->format('Y-m-d H:i:s'))->toBe('2026-10-25 22:30:00')
-        ->and($transactions[1]->occurred_at->copy()->utc()->format('Y-m-d H:i:s'))->toBe('2026-10-26 16:59:00')
-        ->and($transactions[2]->occurred_at->copy()->utc()->format('Y-m-d H:i:s'))->toBe('2026-10-26 17:00:00');
+    try {
+        app()->detectEnvironment(static fn (): string => 'production');
+        expect(fn () => app(\Database\Seeders\DatabaseSeeder::class)->run())
+            ->toThrow(\RuntimeException::class, 'Seeder produksi memerlukan');
+    } finally {
+        app()->detectEnvironment(static fn (): string => 'testing');
+        foreach ($previous as $key => $value) {
+            if ($value !== false) {
+                putenv($key.'='.$value);
+                $_ENV[$key] = $value;
+                $_SERVER[$key] = $value;
+            }
+        }
+    }
 });

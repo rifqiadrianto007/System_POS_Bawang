@@ -48,11 +48,11 @@ it('returns the documented quote response and merges repeated products', functio
         ->assertJsonPath('data.items.0.line_total', 41300)
         ->assertJsonPath('data.items.1.product_id', $white->id)
         ->assertJsonPath('data.items.1.weight_kg', '4.000')
-        ->assertJsonPath('data.items.1.price_tier', '3kg')
-        ->assertJsonPath('data.items.1.line_total', 104000)
-        ->assertJsonPath('data.subtotal', 145300)
+        ->assertJsonPath('data.items.1.price_tier', 'retail')
+        ->assertJsonPath('data.items.1.line_total', 112000)
+        ->assertJsonPath('data.subtotal', 153300)
         ->assertJsonPath('data.discount', 0)
-        ->assertJsonPath('data.total', 145300);
+        ->assertJsonPath('data.total', 153300);
 });
 
 it('supports the documented final total discount', function () {

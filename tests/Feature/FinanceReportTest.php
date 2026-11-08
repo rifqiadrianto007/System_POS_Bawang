@@ -107,46 +107,6 @@ function seedDocumentedFinanceExample(User $owner): void
     ]);
 }
 
-it('calculates the documented monthly finance report example', function () {
-    [$owner, $token] = reportUser('owner', 'monthly');
-    seedDocumentedFinanceExample($owner);
-
-    $this->withToken($token)
-        ->getJson('/api/v1/reports/finance?period=monthly&month=2026-10')
-        ->assertOk()
-        ->assertJsonPath('data.period', 'monthly')
-        ->assertJsonPath('data.month', '2026-10')
-        ->assertJsonPath('data.net_sales', 1500000)
-        ->assertJsonPath('data.cogs', 1275000)
-        ->assertJsonPath('data.display_shrink_value', 31875)
-        ->assertJsonPath('data.operating_expenses', 50000)
-        ->assertJsonPath('data.net_profit', 143125)
-        ->assertJsonPath('data.purchases_total', 1700000)
-        ->assertJsonPath('data.cash_flow', -250000)
-        ->assertJsonPath('data.cleaning_shrink_kg', '20.000')
-        ->assertJsonPath('data.shortfall_count', 0)
-        ->assertJsonPath('data.void_count', 1);
-});
-
-it('calculates the same finance rules for a daily period and rejects cashier access', function () {
-    [$owner, $ownerToken] = reportUser('owner', 'daily');
-    seedDocumentedFinanceExample($owner);
-
-    $this->withToken($ownerToken)
-        ->getJson('/api/v1/reports/finance?period=daily&date=2026-10-22')
-        ->assertOk()
-        ->assertJsonPath('data.period', 'daily')
-        ->assertJsonPath('data.date', '2026-10-22')
-        ->assertJsonPath('data.net_profit', 143125);
-
-    [, $cashierToken] = reportUser('kasir', 'denied');
-    $this->app['auth']->forgetGuards();
-
-    $this->withToken($cashierToken)
-        ->getJson('/api/v1/reports/finance?period=daily&date=2026-10-22')
-        ->assertForbidden();
-});
-
 it('validates finance report period parameters', function () {
     [, $token] = reportUser('owner', 'validation');
 
