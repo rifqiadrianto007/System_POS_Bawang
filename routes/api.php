@@ -1,7 +1,7 @@
 <?php
 
-use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AuditLogController;
+use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\PurchaseController;
@@ -37,9 +37,9 @@ Route::prefix('v1')->group(function (): void {
             Route::put('/purchases/{purchase}', [PurchaseController::class, 'update']);
             Route::delete('/purchases/{purchase}', [PurchaseController::class, 'destroy']);
             Route::post('/purchases/{purchase}/lots', [PurchaseController::class, 'addLot']);
-            Route::put('/purchases/{purchase}/lots/{lot}', [PurchaseController::class, 'updateLot']);
             Route::delete('/purchases/{purchase}/lots/{lot}', [PurchaseController::class, 'deleteLot']);
-            Route::post('/purchases/{purchase}/finalize', [PurchaseController::class, 'finalize']);
+            Route::post('/purchases/{purchase}/close', [PurchaseController::class, 'close']);
+            Route::post('/purchases/{purchase}/reopen', [PurchaseController::class, 'reopen']);
             Route::get('/purchases/{purchase}', [PurchaseController::class, 'show']);
             Route::get('/stock', StockController::class);
             Route::post('/stock-counts', [StockCountController::class, 'store']);
