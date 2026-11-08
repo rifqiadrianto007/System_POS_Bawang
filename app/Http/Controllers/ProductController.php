@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\StoreProductRequest;
 use App\Http\Requests\ProductIndexRequest;
+use App\Http\Requests\StoreProductRequest;
 use App\Http\Requests\UpdateProductRequest;
 use App\Http\Requests\UpdateProductStatusRequest;
 use App\Http\Resources\ProductPriceHistoryResource;
@@ -28,7 +28,9 @@ class ProductController extends Controller
     public function store(StoreProductRequest $request): JsonResponse
     {
         $product = DB::transaction(function () use ($request): Product {
-            $product = Product::query()->create($request->validated());
+            $attributes = $request->validated();
+            unset($attributes['price_3kg']);
+            $product = Product::query()->create($attributes);
 
             $this->recordAudit('product.created', $product, $request->user()->id, [
                 'name' => $product->name,
@@ -43,7 +45,8 @@ class ProductController extends Controller
     public function update(UpdateProductRequest $request, Product $product): ProductResource
     {
         $validated = $request->validated();
-        $pricesChanged = collect(['price_retail', 'price_3kg', 'price_5kg'])
+        unset($validated['price_3kg']);
+        $pricesChanged = collect(['price_retail', 'price_5kg'])
             ->contains(fn (string $field): bool => (int) $product->{$field} !== (int) $validated[$field]);
 
         $product = DB::transaction(function () use ($request, $product, $validated, $pricesChanged): Product {
@@ -53,7 +56,6 @@ class ProductController extends Controller
                 ProductPriceHistory::query()->create([
                     'product_id' => $product->id,
                     'price_retail' => $product->price_retail,
-                    'price_3kg' => $product->price_3kg,
                     'price_5kg' => $product->price_5kg,
                     'changed_by' => $request->user()->id,
                     'changed_at' => now(),
@@ -61,7 +63,6 @@ class ProductController extends Controller
 
                 $this->recordAudit('product.price_changed', $product, $request->user()->id, [
                     'price_retail' => $product->price_retail,
-                    'price_3kg' => $product->price_3kg,
                     'price_5kg' => $product->price_5kg,
                 ]);
             }

@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ProductPriceHistory extends Model
 {
-    protected $fillable = ['product_id', 'price_retail', 'price_3kg', 'price_5kg', 'changed_by', 'changed_at'];
+    protected $fillable = ['product_id', 'price_retail', 'price_5kg', 'changed_by', 'changed_at'];
 
     protected function casts(): array
     {

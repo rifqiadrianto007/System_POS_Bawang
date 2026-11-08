@@ -3,12 +3,11 @@
 namespace App\Services;
 
 use App\Models\AuditLog;
-use App\Models\SaleAllocation;
-use App\Models\StockLot;
+use App\Models\Product;
+use App\Models\Purchase;
 use App\Models\StockMovement;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
-use App\Services\ShortfallResolver;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -18,7 +17,7 @@ final class TransactionService
 {
     public function __construct(
         private readonly PricingService $pricingService,
-        private readonly ShortfallResolver $shortfallResolver
+        private readonly AverageCostService $averageCost
     ) {}
 
     /**
@@ -87,7 +86,7 @@ final class TransactionService
                     'line_total' => $item['line_total'],
                     'cogs' => 0,
                 ]);
-                $this->allocateItem($transactionItem, $occurredAt, $cashierId);
+                $this->applySale($transactionItem, $occurredAt, $cashierId);
             }
 
             return $transaction->load($this->transactionItemResponseRelation($includeCosts));
@@ -148,139 +147,43 @@ final class TransactionService
         ];
     }
 
-    private function allocateItem(TransactionItem $transactionItem, Carbon $occurredAt, int $createdBy): void
+    private function applySale(TransactionItem $transactionItem, Carbon $occurredAt, int $createdBy): void
     {
-        $requiredMilli = $this->toMilliKilograms((string) $transactionItem->weight_kg);
-        $lots = StockLot::query()
-            ->where('product_id', $transactionItem->product_id)
-            ->whereHas('purchase', fn ($query) => $query->where('status', 'finalized'))
-            ->with('movements')
-            ->orderBy('cleaned_at')
-            ->orderBy('id')
-            ->lockForUpdate()
-            ->get();
-        $remainingMilli = $requiredMilli;
-        $cogsNumerator = 0;
-
-        foreach ($lots as $lot) {
-            if ($remainingMilli <= 0) {
-                break;
-            }
-
-            $availableMilli = $this->sumMovementWeight($lot->movements);
-            if ($availableMilli <= 0) {
-                continue;
-            }
-
-            $allocatedMilli = min($remainingMilli, $availableMilli);
-            $this->createAllocation(
-                $transactionItem,
-                $lot,
-                $allocatedMilli,
-                (int) $lot->unit_cost,
-                false,
-                $occurredAt,
-                $createdBy
-            );
-            $remainingMilli -= $allocatedMilli;
-            $cogsNumerator += $allocatedMilli * (int) $lot->unit_cost;
-        }
-
-        if ($remainingMilli > 0) {
-            $this->createAllocation(
-                $transactionItem,
-                null,
-                $remainingMilli,
-                0,
-                true,
-                $occurredAt,
-                $createdBy
-            );
-            StockMovement::query()->create([
-                'product_id' => $transactionItem->product_id,
-                'lot_id' => null,
-                'type' => 'sale',
-                'weight_kg' => $this->formatWeight(-$remainingMilli),
-                'unit_cost' => 0,
-                'ref_type' => Transaction::class,
-                'ref_id' => $transactionItem->transaction_id,
-                'occurred_at' => $occurredAt,
-                'created_by' => $createdBy,
-                'note' => 'Shortfall penjualan',
-            ]);
-        }
-
-        $transactionItem->update(['cogs' => $this->roundHalfUp($cogsNumerator, 1000)]);
-    }
-
-    private function createAllocation(
-        TransactionItem $transactionItem,
-        ?StockLot $lot,
-        int $weightMilli,
-        int $unitCost,
-        bool $isShortfall,
-        Carbon $occurredAt,
-        int $createdBy
-    ): void {
-        SaleAllocation::query()->create([
-            'transaction_item_id' => $transactionItem->id,
-            'lot_id' => $lot?->id,
-            'weight_kg' => $this->formatWeight($weightMilli),
-            'unit_cost' => $unitCost,
-            'is_shortfall' => $isShortfall,
+        $requiredMilli = $this->averageCost->toMilli((string) $transactionItem->weight_kg);
+        $product = Product::query()->lockForUpdate()->findOrFail($transactionItem->product_id);
+        $balance = $this->averageCost->stock($product);
+        $stockMilli = $this->averageCost->toMilli($balance['stock_kg']);
+        $coveredMilli = min($requiredMilli, max(0, $stockMilli));
+        $shortfallMilli = $requiredMilli - $coveredMilli;
+        $coveredCogs = $this->averageCost->cogs($coveredMilli, $stockMilli, $balance['stock_value']);
+        $reserveCost = $this->fallbackUnitCost($product);
+        $shortfallCogs = $this->averageCost->valueForWeight($shortfallMilli, $reserveCost);
+        $cogs = $coveredCogs + $shortfallCogs;
+        $transactionItem->update(['cogs' => $cogs, 'shortfall_kg' => $this->averageCost->formatWeight($shortfallMilli)]);
+        StockMovement::query()->create([
+            'product_id' => $product->id, 'lot_id' => null, 'type' => 'sale',
+            'weight_kg' => $this->averageCost->formatWeight(-$requiredMilli), 'value_delta' => -$cogs,
+            'ref_type' => Transaction::class, 'ref_id' => $transactionItem->transaction_id,
+            'occurred_at' => $occurredAt, 'created_by' => $createdBy,
+            'note' => $shortfallMilli > 0 ? 'Penjualan dengan HPP cadangan' : 'Penjualan',
         ]);
+        $this->averageCost->updateLastUnitCost($product);
+    }
 
-        if ($lot !== null) {
-            StockMovement::query()->create([
-                'product_id' => $transactionItem->product_id,
-                'lot_id' => $lot->id,
-                'type' => 'sale',
-                'weight_kg' => $this->formatWeight(-$weightMilli),
-                'unit_cost' => $unitCost,
-                'ref_type' => Transaction::class,
-                'ref_id' => $transactionItem->transaction_id,
-                'occurred_at' => $occurredAt,
-                'created_by' => $createdBy,
-                'note' => $isShortfall ? 'Shortfall penjualan' : 'Alokasi penjualan FIFO',
-            ]);
+    private function fallbackUnitCost(Product $product): int
+    {
+        if ($product->last_unit_cost !== null) {
+            return (int) $product->last_unit_cost;
         }
-    }
-
-    private function sumMovementWeight(iterable $movements): int
-    {
-        $total = 0;
-
-        foreach ($movements as $movement) {
-            $total += $this->toMilliKilograms((string) $movement->weight_kg);
+        $row = Purchase::query()->where('jenis', $product->jenis)->selectRaw('SUM(total_cost) AS cost, SUM(gross_weight_kg) AS kg')->first();
+        $milli = $this->averageCost->toMilli((string) ($row->kg ?? '0'));
+        if ($milli <= 0) {
+            return 0;
         }
+        $numerator = (int) $row->cost * 1000;
+        $quotient = intdiv($numerator, $milli);
 
-        return $total;
-    }
-
-    private function toMilliKilograms(string $weight): int
-    {
-        $normalized = ltrim(trim($weight), '+');
-        $negative = str_starts_with($normalized, '-');
-        $normalized = ltrim($normalized, '-');
-        [$whole, $fraction] = array_pad(explode('.', $normalized, 2), 2, '');
-        $value = ((int) $whole * 1000) + (int) str_pad(substr($fraction, 0, 3), 3, '0');
-
-        return $negative ? -$value : $value;
-    }
-
-    private function formatWeight(int $weightMilli): string
-    {
-        $sign = $weightMilli < 0 ? '-' : '';
-        $absolute = abs($weightMilli);
-
-        return $sign.intdiv($absolute, 1000).'.'.str_pad((string) ($absolute % 1000), 3, '0', STR_PAD_LEFT);
-    }
-
-    private function roundHalfUp(int $numerator, int $denominator): int
-    {
-        return $numerator < 0
-            ? -intdiv(abs($numerator) * 2 + $denominator, $denominator * 2)
-            : intdiv($numerator * 2 + $denominator, $denominator * 2);
+        return $quotient + (($numerator % $milli) * 2 >= $milli ? 1 : 0);
     }
 
     public function void(Transaction $transaction, int $ownerId, string $reason): Transaction
@@ -288,7 +191,7 @@ final class TransactionService
         return DB::transaction(function () use ($transaction, $ownerId, $reason): Transaction {
             $transaction = Transaction::query()
                 ->lockForUpdate()
-                ->with('items.saleAllocations')
+                ->with('items')
                 ->findOrFail($transaction->id);
 
             if ($transaction->status === 'void') {
@@ -303,22 +206,19 @@ final class TransactionService
             ]);
 
             foreach ($transaction->items as $item) {
-                foreach ($item->saleAllocations as $allocation) {
-                    StockMovement::query()->create([
-                        'product_id' => $item->product_id,
-                        'lot_id' => $allocation->lot_id,
-                        'type' => 'void_return',
-                        'weight_kg' => $allocation->weight_kg,
-                        'unit_cost' => $allocation->unit_cost,
-                        'ref_type' => Transaction::class,
-                        'ref_id' => $transaction->id,
-                        'occurred_at' => now(),
-                        'created_by' => $ownerId,
-                        'note' => $allocation->lot_id === null
-                            ? 'Pengurangan shortfall transaksi void'
-                            : 'Pengembalian stok transaksi void',
-                    ]);
-                }
+                StockMovement::query()->create([
+                    'product_id' => $item->product_id,
+                    'lot_id' => null,
+                    'type' => 'void_return',
+                    'weight_kg' => $item->weight_kg,
+                    'value_delta' => (int) $item->cogs,
+                    'ref_type' => Transaction::class,
+                    'ref_id' => $transaction->id,
+                    'occurred_at' => now(),
+                    'created_by' => $ownerId,
+                    'note' => 'Pengembalian transaksi void',
+                ]);
+                $this->averageCost->updateLastUnitCost(Product::query()->findOrFail($item->product_id));
             }
 
             AuditLog::query()->create([

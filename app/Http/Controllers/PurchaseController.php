@@ -2,19 +2,17 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\StorePurchaseRequest;
 use App\Http\Requests\PurchaseIndexRequest;
+use App\Http\Requests\StorePurchaseRequest;
 use App\Http\Requests\StoreStockLotRequest;
 use App\Http\Requests\UpdatePurchaseRequest;
-use App\Http\Resources\PurchaseResource;
 use App\Http\Resources\PurchaseListResource;
+use App\Http\Resources\PurchaseResource;
 use App\Http\Resources\StockLotResource;
 use App\Models\Purchase;
 use App\Models\StockLot;
 use App\Services\PurchaseService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Database\QueryException;
 use LogicException;
 
 class PurchaseController extends Controller
@@ -94,40 +92,24 @@ class PurchaseController extends Controller
             $purchaseService->deleteLot($purchase, $lot, request()->user()->id);
         } catch (LogicException $exception) {
             return response()->json(['message' => $exception->getMessage()], 409);
-        } catch (QueryException $exception) {
-            if ($exception->getCode() !== '23000') {
-                throw $exception;
-            }
-
-            return response()->json(['message' => 'Kulak yang sudah final tidak dapat diubah.'], 409);
         }
 
         return response()->json(null, 204);
     }
 
-    public function updateLot(
-        StoreStockLotRequest $request,
-        Purchase $purchase,
-        StockLot $lot,
-        PurchaseService $purchaseService
-    ): StockLotResource|JsonResponse {
+    public function close(Purchase $purchase, PurchaseService $purchaseService): PurchaseResource|JsonResponse
+    {
         try {
-            $lot = $purchaseService->updateLot($purchase, $lot, $request->validated(), $request->user()->id);
+            $purchase = $purchaseService->close($purchase, request()->user()->id);
         } catch (LogicException $exception) {
             return response()->json(['message' => $exception->getMessage()], 409);
         }
 
-        return new StockLotResource($lot);
+        return new PurchaseResource($purchase);
     }
 
-    public function finalize(Purchase $purchase, PurchaseService $purchaseService): PurchaseResource
+    public function reopen(Purchase $purchase, PurchaseService $purchaseService): PurchaseResource
     {
-        try {
-            $purchase = $purchaseService->finalize($purchase, request()->user()->id);
-        } catch (LogicException $exception) {
-            abort(response()->json(['message' => $exception->getMessage()], 409));
-        }
-
-        return new PurchaseResource($purchase);
+        return new PurchaseResource($purchaseService->reopen($purchase, request()->user()->id));
     }
 }

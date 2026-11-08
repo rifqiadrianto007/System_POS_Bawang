@@ -62,7 +62,6 @@ it('allows an owner to update prices and records history and audit', function ()
 
     expect($history->product_id)->toBe($product->id)
         ->and($history->price_retail)->toBe(28000)
-        ->and($history->price_3kg)->toBe(26500)
         ->and($history->price_5kg)->toBe(24500)
         ->and($history->changed_by)->toBe($owner->id)
         ->and($audit->entity_id)->toBe($product->id)

@@ -3,123 +3,64 @@
 namespace App\Services;
 
 use App\Models\Product;
-use App\Models\StockLot;
+use App\Models\Purchase;
+use App\Models\StockCount;
+use App\Models\StockMovement;
 
 final class StockService
 {
-    /**
-     * @return list<array<string, mixed>>
-     */
+    public function __construct(private readonly AverageCostService $averageCost) {}
+
+    /** @return array{products:list<array<string,mixed>>,totals:array{display_kg:string,warehouse_kg:string,stock_value:int}} */
     public function summaries(): array
     {
-        return Product::query()
-            ->with([
-                'stockLots' => fn ($query) => $query->whereHas('purchase', fn ($purchase) => $purchase->where('status', 'finalized')),
-                'stockLots.movements',
-                'stockMovements',
-            ])
-            ->orderBy('name')
-            ->get()
-            ->map(fn (Product $product): array => $this->summarizeProduct($product))
-            ->all();
-    }
+        $warehouseMilli = 0;
+        foreach (Purchase::query()->whereNull('closed_at')->with('stockLots:id,purchase_id,weight_kg')->get() as $purchase) {
+            $sorted = 0;
+            foreach ($purchase->stockLots as $lot) {
+                $sorted += $this->averageCost->toMilli((string) $lot->weight_kg);
+            }
+            $warehouseMilli += max(0, $this->averageCost->toMilli((string) $purchase->gross_weight_kg) - $sorted);
+        }
+        $balances = StockMovement::query()->select('product_id')
+            ->selectRaw('COALESCE(SUM(weight_kg),0) as stock_kg, COALESCE(SUM(value_delta),0) as stock_value')
+            ->groupBy('product_id')->get()->keyBy('product_id');
+        $counts = StockCount::query()->where('status', 'active')->select('product_id')
+            ->selectRaw('MAX(counted_at) as counted_at')->groupBy('product_id')->pluck('counted_at', 'product_id');
+        $products = Product::query()->orderBy('name')->get()->map(function (Product $product) use ($balances, $counts): array {
+            $row = $balances->get($product->id);
+            $stockMilli = $this->averageCost->toMilli((string) ($row->stock_kg ?? '0'));
+            $stockValue = (int) ($row->stock_value ?? 0);
+            $avgCost = null;
+            if ($stockMilli > 0) {
+                $numerator = bcmul((string) $stockValue, '1000', 0);
+                $negative = str_starts_with($numerator, '-');
+                $absolute = ltrim($numerator, '-');
+                $quotient = (int) bcdiv($absolute, (string) $stockMilli, 0);
+                $remainder = (int) bcmod($absolute, (string) $stockMilli);
+                $avgCost = $quotient + ($remainder * 2 >= $stockMilli ? 1 : 0);
+                if ($negative) {
+                    $avgCost *= -1;
+                }
+            }
 
-    /**
-     * @return array<string, mixed>
-     */
-    private function summarizeProduct(Product $product): array
-    {
-        $lots = $product->stockLots
-            ->sortBy(fn (StockLot $lot): string => $lot->cleaned_at?->format('Y-m-d').'|'.str_pad((string) $lot->id, 10, '0', STR_PAD_LEFT))
-            ->map(fn (StockLot $lot): array => $this->summarizeLot($lot))
-            ->values()
-            ->all();
-        $stockMilli = $this->sumMovementWeight($product->stockMovements);
-        $shortfallMilli = $this->shortfallWeight($product);
-
-        return [
-            'product_id' => $product->id,
-            'product_name' => $product->name,
-            'stock_weight_kg' => $this->formatWeight($stockMilli),
-            'shortfall_kg' => $this->formatWeight($shortfallMilli),
-            'inventory_value' => array_sum(array_column($lots, 'inventory_value')),
-            'lots' => $lots,
-        ];
-    }
-
-    private function shortfallWeight(Product $product): int
-    {
-        return $this->sumWeightQuery(
-            \App\Models\SaleAllocation::query()
-                ->join('transaction_items', 'transaction_items.id', '=', 'sale_allocations.transaction_item_id')
-                ->join('transactions', 'transactions.id', '=', 'transaction_items.transaction_id')
-                ->where('transaction_items.product_id', $product->id)
-                ->where('transactions.status', 'completed')
-                ->where('sale_allocations.is_shortfall', true)
-        );
-    }
-
-    private function sumWeightQuery($query): int
-    {
-        return $this->toMilliKilograms((string) $query->sum('sale_allocations.weight_kg'));
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function summarizeLot(StockLot $lot): array
-    {
-        $lotMilli = $this->sumMovementWeight($lot->movements);
-        $inventoryValue = $lot->unit_cost === null
-            ? 0
-            : $this->roundHalfUp($lotMilli * (int) $lot->unit_cost, 1000);
-
-        return [
-            'lot_id' => $lot->id,
-            'product_id' => $lot->product_id,
-            'cleaned_at' => $lot->cleaned_at?->format('Y-m-d'),
-            'stock_weight_kg' => $this->formatWeight($lotMilli),
-            'unit_cost' => $lot->unit_cost,
-            'inventory_value' => $inventoryValue,
-        ];
-    }
-
-    private function sumMovementWeight(iterable $movements): int
-    {
-        $total = 0;
-
-        foreach ($movements as $movement) {
-            $total += $this->toMilliKilograms((string) $movement->weight_kg);
+            return [
+                'product_id' => (int) $product->id, 'name' => $product->name, 'jenis' => $product->jenis,
+                'is_active' => (bool) $product->is_active, 'stock_kg' => $this->averageCost->formatWeight($stockMilli),
+                'shortfall_kg' => $this->averageCost->formatWeight(max(0, -$stockMilli)),
+                'stock_value' => $stockValue, 'avg_cost' => $avgCost, 'last_count_date' => $counts[$product->id] ?? null,
+            ];
+        })->all();
+        $displayMilli = 0;
+        $value = 0;
+        foreach ($products as $product) {
+            $displayMilli += max(0, $this->averageCost->toMilli($product['stock_kg']));
+            $value += (int) $product['stock_value'];
         }
 
-        return $total;
-    }
-
-    private function toMilliKilograms(string $weight): int
-    {
-        $normalized = trim($weight);
-        $negative = str_starts_with($normalized, '-');
-        $normalized = ltrim($normalized, '+-');
-        [$whole, $fraction] = array_pad(explode('.', $normalized, 2), 2, '');
-        $value = ((int) $whole * 1000) + (int) str_pad(substr($fraction, 0, 3), 3, '0');
-
-        return $negative ? -$value : $value;
-    }
-
-    private function formatWeight(int $milliKilograms): string
-    {
-        $sign = $milliKilograms < 0 ? '-' : '';
-        $absolute = abs($milliKilograms);
-
-        return $sign.intdiv($absolute, 1000).'.'.str_pad((string) ($absolute % 1000), 3, '0', STR_PAD_LEFT);
-    }
-
-    private function roundHalfUp(int $numerator, int $denominator): int
-    {
-        if ($numerator < 0) {
-            return -intdiv(abs($numerator) * 2 + $denominator, $denominator * 2);
-        }
-
-        return intdiv($numerator * 2 + $denominator, $denominator * 2);
+        return ['products' => $products, 'totals' => [
+            'display_kg' => $this->averageCost->formatWeight($displayMilli),
+            'warehouse_kg' => $this->averageCost->formatWeight($warehouseMilli), 'stock_value' => $value,
+        ]];
     }
 }

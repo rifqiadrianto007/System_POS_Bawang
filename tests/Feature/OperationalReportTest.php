@@ -1,12 +1,6 @@
 <?php
 
 use App\Models\Product;
-use App\Models\Purchase;
-use App\Models\SaleAllocation;
-use App\Models\StockCount;
-use App\Models\StockLot;
-use App\Models\StockMovement;
-use App\Models\Supplier;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
 use App\Models\User;
@@ -28,45 +22,10 @@ function operationalReportProduct(string $name, int $price): Product
 {
     return Product::query()->create([
         'name' => $name,
+        'jenis' => 'merah',
         'price_retail' => $price,
-        'price_3kg' => $price,
         'price_5kg' => $price,
     ]);
-}
-
-function operationalReportLot(Product $product, User $owner, string $weight, int $unitCost, string $date): StockLot
-{
-    $supplier = Supplier::query()->create(['name' => 'Supplier '.$date.' '.$product->name]);
-    $purchase = Purchase::query()->create([
-        'supplier_id' => $supplier->id,
-        'purchased_at' => $date,
-        'gross_weight_kg' => $weight,
-        'price_per_kg' => $unitCost,
-        'total_cost' => (int) $weight * $unitCost,
-        'status' => 'finalized',
-        'cost_per_clean_kg' => $unitCost,
-        'clean_weight_kg' => $weight,
-        'finalized_at' => $date.' 01:00:00',
-        'created_by' => $owner->id,
-    ]);
-    $lot = StockLot::query()->create([
-        'purchase_id' => $purchase->id,
-        'product_id' => $product->id,
-        'clean_weight_kg' => $weight,
-        'unit_cost' => $unitCost,
-        'cleaned_at' => $date,
-    ]);
-    StockMovement::query()->create([
-        'product_id' => $product->id,
-        'lot_id' => $lot->id,
-        'type' => 'in_clean',
-        'weight_kg' => $weight,
-        'unit_cost' => $unitCost,
-        'occurred_at' => $date.' 01:00:00',
-        'created_by' => $owner->id,
-    ]);
-
-    return $lot;
 }
 
 function operationalReportTransaction(
@@ -95,7 +54,7 @@ function operationalReportTransaction(
         'voided_by' => $void ? $cashier->id : null,
         'voided_at' => $void ? $occurredAt : null,
     ]);
-    $item = TransactionItem::query()->create([
+    TransactionItem::query()->create([
         'transaction_id' => $transaction->id,
         'product_id' => $product->id,
         'product_name' => $product->name,
@@ -105,14 +64,6 @@ function operationalReportTransaction(
         'line_total' => $total,
         'cogs' => $cogs,
     ]);
-    SaleAllocation::query()->create([
-        'transaction_item_id' => $item->id,
-        'lot_id' => null,
-        'weight_kg' => $weight,
-        'unit_cost' => $cogs === 0 ? 0 : intdiv($cogs, (int) $weight),
-        'is_shortfall' => $cogs === 0,
-    ]);
-
     return $transaction;
 }
 
@@ -135,50 +86,6 @@ it('reports sales by product for completed transactions and excludes void transa
         ->assertJsonPath('data.0.shortfall_count', 0)
         ->assertJsonPath('data.1.product_name', 'Putih A')
         ->assertJsonPath('data.1.revenue', 60000);
-});
-
-it('reports stock totals and products from the stock ledger', function () {
-    [$owner, $token] = operationalReportUser('owner', 'stock');
-    $product = operationalReportProduct('Merah A', 25000);
-    $lot = operationalReportLot($product, $owner, '20.000', 21250, '2026-10-22');
-    StockMovement::query()->create([
-        'product_id' => $product->id,
-        'lot_id' => $lot->id,
-        'type' => 'sale',
-        'weight_kg' => '-5.000',
-        'unit_cost' => 21250,
-        'occurred_at' => '2026-10-22 03:00:00',
-    ]);
-    StockCount::query()->create([
-        'product_id' => $product->id,
-        'counted_weight_kg' => '14.000',
-        'system_weight_kg' => '15.000',
-        'diff_kg' => '-1.000',
-        'unit_cost_avg' => 21250,
-        'loss_value' => 21250,
-        'counted_at' => '2026-10-22 05:00:00',
-        'counted_by' => $owner->id,
-    ]);
-    StockMovement::query()->create([
-        'product_id' => $product->id,
-        'lot_id' => $lot->id,
-        'type' => 'count_adjust',
-        'weight_kg' => '-1.000',
-        'unit_cost' => 21250,
-        'occurred_at' => '2026-10-22 05:00:00',
-    ]);
-
-    $this->withToken($token)
-        ->getJson('/api/v1/reports/stock?date=2026-10-22')
-        ->assertOk()
-        ->assertJsonPath('data.clean_kg', '20.000')
-        ->assertJsonPath('data.stock_ready_kg', '14.000')
-        // Y-02 reports sold weight from completed transaction items, not raw sale movements.
-        ->assertJsonPath('data.sold_kg', '0.000')
-        ->assertJsonPath('data.display_shrink_kg', '-1.000')
-        ->assertJsonPath('data.display_shrink_value', 21250)
-        ->assertJsonPath('data.products.0.name', 'Merah A')
-        ->assertJsonPath('data.products.0.stock_kg', '14.000');
 });
 
 it('reports completed transaction counts, revenue, and void counts by cashier', function () {

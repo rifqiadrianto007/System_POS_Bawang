@@ -21,6 +21,7 @@ class TransactionItemResource extends JsonResource
 
         if ($request->user()?->role === 'owner') {
             $data['cogs'] = $this->cogs;
+            $data['shortfall_kg'] = $this->shortfall_kg ?? '0.000';
         }
 
         return $data;

@@ -12,8 +12,8 @@ class ProductResource extends JsonResource
         $data = [
             'id' => $this->id,
             'name' => $this->name,
+            'jenis' => $this->jenis,
             'price_retail' => $this->price_retail,
-            'price_3kg' => $this->price_3kg,
             'price_5kg' => $this->price_5kg,
             'is_active' => $this->is_active,
         ];

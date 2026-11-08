@@ -2,7 +2,6 @@
 
 use App\Models\AuditLog;
 use App\Models\Product;
-use App\Models\SaleAllocation;
 use App\Models\StockMovement;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
@@ -47,7 +46,7 @@ function assertFinalTotalRejectionHasNoWrites($response, string $field, string $
         ->assertJsonPath('errors.'.$field.'.0', $message);
 
     expect(Transaction::query()->count())->toBe(0)
-        ->and(SaleAllocation::query()->count())->toBe(0)
+        ->and(TransactionItem::query()->count())->toBe(0)
         ->and(StockMovement::query()->count())->toBe(0)
         ->and(AuditLog::query()->count())->toBe(0);
 }
@@ -204,7 +203,7 @@ it('rejects U-13 non-integer final totals before writing anything', function (mi
     ]));
     $response->assertUnprocessable()->assertJsonValidationErrors('final_total');
     expect(Transaction::query()->count())->toBe(0)
-        ->and(SaleAllocation::query()->count())->toBe(0)
+        ->and(TransactionItem::query()->count())->toBe(0)
         ->and(StockMovement::query()->count())->toBe(0)
         ->and(AuditLog::query()->count())->toBe(0);
 })->with([

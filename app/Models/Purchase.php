@@ -5,18 +5,20 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Purchase extends Model
 {
-    protected $fillable = ['supplier_id', 'purchased_at', 'gross_weight_kg', 'price_per_kg', 'total_cost', 'notes', 'status', 'cost_per_clean_kg', 'clean_weight_kg', 'finalized_at', 'created_by'];
+    use SoftDeletes;
+
+    protected $fillable = ['code', 'supplier_id', 'purchased_at', 'jenis', 'gross_weight_kg', 'price_per_kg', 'total_cost', 'notes', 'closed_at', 'created_by'];
 
     protected function casts(): array
     {
         return [
             'purchased_at' => 'date',
             'gross_weight_kg' => 'decimal:3',
-            'clean_weight_kg' => 'decimal:3',
-            'finalized_at' => 'datetime',
+            'closed_at' => 'datetime',
         ];
     }
 
