@@ -14,12 +14,10 @@ class PurchaseResource extends JsonResource
             'supplier' => ['id' => (int) $this->supplier->id, 'name' => $this->supplier->name],
             'purchased_at' => $this->purchased_at->format('Y-m-d'), 'jenis' => $this->jenis,
             'gross_weight_kg' => (string) $this->gross_weight_kg, 'price_per_kg' => (int) $this->price_per_kg,
-            'total_cost' => (int) $this->total_cost, 'sorting_status' => $this->sorting_status,
-            'sorted_kg' => $this->sorted_kg, 'unsorted_kg' => $this->unsorted_kg,
-            'sold_kg' => $this->sold_kg, 'susut_kg' => $this->susut_kg, 'susut_final' => (bool) $this->susut_final,
-            'can_edit' => (bool) $this->can_edit, 'can_delete' => (bool) $this->can_delete,
-            'can_add_lot' => (bool) $this->can_add_lot, 'notes' => $this->notes ?? '',
-            'closed_at' => $this->closed_at?->toIso8601String(), 'lots' => $this->lots ?? [],
+            'total_cost' => (int) ($this->total_cost ?? 0), 'sorted_weight_kg' => $this->sorted_weight_kg,
+            'remaining_weight_kg' => $this->remaining_weight_kg, 'sort_percentage' => (int) $this->sort_percentage,
+            'status_sortir' => $this->status_sortir, 'can_edit' => (bool) $this->can_edit,
+            'can_delete' => (bool) $this->can_delete, 'notes' => $this->notes ?? '', 'lots' => $this->lots ?? [],
         ];
     }
 }

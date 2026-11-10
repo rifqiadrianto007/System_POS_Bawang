@@ -4,13 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\PurchaseIndexRequest;
 use App\Http\Requests\StorePurchaseRequest;
-use App\Http\Requests\StoreStockLotRequest;
 use App\Http\Requests\UpdatePurchaseRequest;
 use App\Http\Resources\PurchaseListResource;
 use App\Http\Resources\PurchaseResource;
-use App\Http\Resources\StockLotResource;
 use App\Models\Purchase;
-use App\Models\StockLot;
 use App\Services\PurchaseService;
 use Illuminate\Http\JsonResponse;
 use LogicException;
@@ -69,47 +66,4 @@ class PurchaseController extends Controller
         return response()->json(['message' => 'Kulak dihapus.']);
     }
 
-    public function addLot(
-        StoreStockLotRequest $request,
-        Purchase $purchase,
-        PurchaseService $purchaseService
-    ): JsonResponse {
-        try {
-            $lot = $purchaseService->addLot($purchase, $request->validated(), $request->user()->id);
-        } catch (LogicException $exception) {
-            return response()->json(['message' => $exception->getMessage()], 409);
-        }
-
-        return (new StockLotResource($lot))->response()->setStatusCode(201);
-    }
-
-    public function deleteLot(
-        Purchase $purchase,
-        StockLot $lot,
-        PurchaseService $purchaseService
-    ): JsonResponse {
-        try {
-            $purchaseService->deleteLot($purchase, $lot, request()->user()->id);
-        } catch (LogicException $exception) {
-            return response()->json(['message' => $exception->getMessage()], 409);
-        }
-
-        return response()->json(null, 204);
-    }
-
-    public function close(Purchase $purchase, PurchaseService $purchaseService): PurchaseResource|JsonResponse
-    {
-        try {
-            $purchase = $purchaseService->close($purchase, request()->user()->id);
-        } catch (LogicException $exception) {
-            return response()->json(['message' => $exception->getMessage()], 409);
-        }
-
-        return new PurchaseResource($purchase);
-    }
-
-    public function reopen(Purchase $purchase, PurchaseService $purchaseService): PurchaseResource
-    {
-        return new PurchaseResource($purchaseService->reopen($purchase, request()->user()->id));
-    }
 }

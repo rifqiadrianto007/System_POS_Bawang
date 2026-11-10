@@ -15,6 +15,7 @@ class StoreStockCountRequest extends FormRequest
     {
         return [
             'product_id' => ['required', 'integer', 'exists:products,id'],
+            'purchase_id' => ['required', 'integer', 'exists:purchases,id'],
             'counted_weight_kg' => ['required', 'decimal:3', 'min:0', 'max:9999.999'],
             'counted_at' => ['required', 'date'],
             'notes' => ['nullable', 'string'],

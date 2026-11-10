@@ -11,14 +11,13 @@ class Purchase extends Model
 {
     use SoftDeletes;
 
-    protected $fillable = ['code', 'supplier_id', 'purchased_at', 'jenis', 'gross_weight_kg', 'price_per_kg', 'total_cost', 'notes', 'closed_at', 'created_by'];
+    protected $fillable = ['code', 'supplier_id', 'purchased_at', 'jenis', 'gross_weight_kg', 'price_per_kg', 'total_cost', 'notes', 'created_by'];
 
     protected function casts(): array
     {
         return [
             'purchased_at' => 'date',
             'gross_weight_kg' => 'decimal:3',
-            'closed_at' => 'datetime',
         ];
     }
 
