@@ -36,10 +36,6 @@ Route::prefix('v1')->group(function (): void {
             Route::post('/purchases', [PurchaseController::class, 'store']);
             Route::put('/purchases/{purchase}', [PurchaseController::class, 'update']);
             Route::delete('/purchases/{purchase}', [PurchaseController::class, 'destroy']);
-            Route::post('/purchases/{purchase}/lots', [PurchaseController::class, 'addLot']);
-            Route::delete('/purchases/{purchase}/lots/{lot}', [PurchaseController::class, 'deleteLot']);
-            Route::post('/purchases/{purchase}/close', [PurchaseController::class, 'close']);
-            Route::post('/purchases/{purchase}/reopen', [PurchaseController::class, 'reopen']);
             Route::get('/purchases/{purchase}', [PurchaseController::class, 'show']);
             Route::get('/stock', StockController::class);
             Route::post('/stock-counts', [StockCountController::class, 'store']);
