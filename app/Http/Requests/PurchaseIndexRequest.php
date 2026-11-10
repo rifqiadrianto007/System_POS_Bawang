@@ -21,7 +21,7 @@ class PurchaseIndexRequest extends FormRequest
             'from' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'to' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'jenis' => ['sometimes', 'nullable', 'in:merah,putih'],
-            'sorting' => ['sometimes', 'nullable', 'in:unsorted,sorting,closed'],
+            'status_sortir' => ['sometimes', 'nullable', 'in:belum_disortir,tersortir'],
             'include' => ['sometimes', 'nullable', 'in:lots'],
         ];
     }
@@ -35,7 +35,7 @@ class PurchaseIndexRequest extends FormRequest
             'per_page.min' => 'Jumlah kulak per halaman minimal 1.',
             'from.date_format' => 'Tanggal awal harus berformat YYYY-MM-DD.',
             'to.date_format' => 'Tanggal akhir harus berformat YYYY-MM-DD.',
-            'status.in' => 'Status kulak tidak valid.',
+            'status_sortir.in' => 'Status kulak tidak valid.',
             'include.in' => 'Data tambahan yang diminta tidak valid.',
         ];
     }

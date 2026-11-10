@@ -12,6 +12,7 @@ class StockCountResource extends JsonResource
         return [
             'id' => $this->id,
             'product_id' => $this->product_id,
+            'purchase_id' => $this->purchase_id,
             'product_name' => $this->product?->name,
             'counted_weight_kg' => $this->formatWeight($this->counted_weight_kg),
             'system_weight_kg' => $this->formatWeight($this->system_weight_kg),
