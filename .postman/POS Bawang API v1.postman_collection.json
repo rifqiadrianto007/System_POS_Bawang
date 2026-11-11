@@ -1,0 +1,2548 @@
+{
+  "info": {
+    "_postman_id": "pos-bawang-api-v1",
+    "name": "POS Bawang API v1",
+    "description": "Koleksi API v1 POS Bawang. Pilih environment POS Bawang - Local. Kontrak stok batch v2 mencakup filter kulak berdasarkan jenis, purchase_id wajib pada hitung ulang, dan data identitas setiap baris GET /stock.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "api_prefix",
+      "value": "/api/v1"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{auth_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login Owner",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{owner_username}}\",\n  \"password\": \"{{owner_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/auth/login",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login owner berhasil', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('Token dan user tersedia', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.token).to.be.a('string').and.not.empty;",
+                  "    pm.expect(body.user.role).to.eql('owner');",
+                  "    pm.environment.set('auth_token', body.token);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login Kasir",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{cashier_username}}\",\n  \"password\": \"{{cashier_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/auth/login",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login kasir berhasil', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    pm.expect(pm.response.json().user.role).to.eql('kasir');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/auth/me",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Profil terautentikasi berhasil', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().user).to.have.property('role');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/auth/logout",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Owner Ping",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/owner/ping",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "owner",
+                "ping"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Products",
+      "item": [
+        {
+          "name": "List Products",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/products?active=1",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "active",
+                  "value": "1",
+                  "description": "Filter aktif untuk owner; kasir tetap hanya menerima produk aktif."
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Product (Owner)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Merah A\",\n  \"jenis\": \"merah\",\n  \"price_retail\": 27500,\n  \"price_5kg\": 24000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/products",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "products"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Product Price History (Owner)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/products/{{product_id}}/price-history",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "products",
+                "{{product_id}}",
+                "price-history"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Product Prices (Owner)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Merah A\",\n  \"jenis\": \"merah\",\n  \"price_retail\": 28000,\n  \"price_5kg\": 24500\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/products/{{product_id}}",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "products",
+                "{{product_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Change Product Status (Owner)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_active\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/products/{{product_id}}/active",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "products",
+                "{{product_id}}",
+                "active"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Transactions",
+      "item": [
+        {
+          "name": "Quote Cart",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer_category\": \"ecer\",\n  \"items\": [\n    { \"product_id\": {{product_id}}, \"weight_kg\": \"2.727\" }\n  ],\n  \"final_total\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/transactions/quote",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions",
+                "quote"
+              ]
+            }
+          },
+          "event": [
+            {
+              "script": {
+                "type": "text",
+                "exec": [
+                  "pm.test('Quote null memakai subtotal dan tanpa diskon', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const data = pm.response.json().data;",
+                  "    pm.expect(data.total).to.eql(data.subtotal);",
+                  "    pm.expect(data.discount).to.eql(0);",
+                  "});"
+                ]
+              },
+              "listen": "test"
+            }
+          ]
+        },
+        {
+          "name": "Create Transaction",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_uuid\": \"{{$guid}}\",\n  \"customer_category\": \"ecer\",\n  \"items\": [\n    { \"product_id\": {{product_id}}, \"weight_kg\": \"2.727\" }\n  ],\n  \"customer_name\": \"Bu Sari\",\n  \"payment_method\": \"cash\",\n  \"final_total\": 70000,\n  \"amount_paid\": 100000,\n  \"occurred_at\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/transactions",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text",
+                "exec": [
+                  "pm.test('Transaksi baru berhasil dibuat', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const data = pm.response.json().data;",
+                  "    pm.expect(data.invoice_no).to.be.a('string');",
+                  "    pm.expect(data.total).to.eql(70000);",
+                  "    pm.expect(data.discount).to.eql(5000);",
+                  "    pm.expect(data.amount_paid).to.eql(100000);",
+                  "    pm.expect(data.change).to.eql(30000);",
+                  "    pm.environment.set('transaction_id', data.id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Transactions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/transactions?period=today&page=1&per_page=20",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "today"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text",
+                "exec": [
+                  "pm.test('Riwayat transaksi berhasil diambil', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data).to.be.an('array');",
+                  "    pm.expect(body.meta).to.be.an('object');",
+                  "    pm.expect(body.summary.transactions_count).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Transaction History Date Filters (R4)",
+          "item": [
+            {
+              "name": "List Transactions Yesterday",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}{{api_prefix}}/transactions?period=yesterday",
+                  "host": [
+                    "{{base_url}}{{api_prefix}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ],
+                  "query": [
+                    {
+                      "key": "period",
+                      "value": "yesterday"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text",
+                    "exec": [
+                      "pm.test('Riwayat kemarin berhasil', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "    pm.expect(pm.response.json().summary).to.be.an('object');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Search Transaction Invoice",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}{{api_prefix}}/transactions?period=today&q=0001",
+                  "host": [
+                    "{{base_url}}{{api_prefix}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ],
+                  "query": [
+                    {
+                      "key": "period",
+                      "value": "today"
+                    },
+                    {
+                      "key": "q",
+                      "value": "0001"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text",
+                    "exec": [
+                      "pm.test('Pencarian nomor nota berhasil', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "    pm.expect(pm.response.json().data).to.be.an('array');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "List Transactions Date Range",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}{{api_prefix}}/transactions?from=2026-10-25&to=2026-10-26",
+                  "host": [
+                    "{{base_url}}{{api_prefix}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ],
+                  "query": [
+                    {
+                      "key": "from",
+                      "value": "2026-10-25"
+                    },
+                    {
+                      "key": "to",
+                      "value": "2026-10-26"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text",
+                    "exec": [
+                      "pm.test('Rentang tanggal riwayat berhasil', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "    pm.expect(pm.response.json().meta).to.have.property('per_page');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "422 Cashier History Window",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}{{api_prefix}}/transactions?from=2026-10-23",
+                  "host": [
+                    "{{base_url}}{{api_prefix}}"
+                  ],
+                  "path": [
+                    "transactions"
+                  ],
+                  "query": [
+                    {
+                      "key": "from",
+                      "value": "2026-10-23"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text",
+                    "exec": [
+                      "pm.test('Kasir ditolak untuk tanggal di luar jendela', function () {",
+                      "    pm.response.to.have.status(422);",
+                      "    pm.expect(pm.response.json().message).to.eql('Kasir hanya dapat melihat transaksi hari ini dan kemarin.');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "404 Old Transaction Detail",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}{{api_prefix}}/transactions/{{old_transaction_id}}",
+                  "host": [
+                    "{{base_url}}{{api_prefix}}"
+                  ],
+                  "path": [
+                    "transactions",
+                    "{{old_transaction_id}}"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text",
+                    "exec": [
+                      "pm.test('Detail transaksi lama tidak terungkap ke kasir', function () {",
+                      "    pm.response.to.have.status(404);",
+                      "    pm.expect(pm.response.json().message).to.eql('Data tidak ditemukan.');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "404 Old Transaction Receipt",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}{{api_prefix}}/transactions/{{old_transaction_id}}/receipt",
+                  "host": [
+                    "{{base_url}}{{api_prefix}}"
+                  ],
+                  "path": [
+                    "transactions",
+                    "{{old_transaction_id}}",
+                    "receipt"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text",
+                    "exec": [
+                      "pm.test('Nota transaksi lama tidak terungkap ke kasir', function () {",
+                      "    pm.response.to.have.status(404);",
+                      "    pm.expect(pm.response.json().message).to.eql('Data tidak ditemukan.');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Get Transaction Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/transactions/{{transaction_id}}",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions",
+                "{{transaction_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text",
+                "exec": [
+                  "pm.test('Detail transaksi berhasil diambil', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data.invoice_no).to.be.a('string');",
+                  "    pm.expect(body.data.items).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Transaction Receipt",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/transactions/{{transaction_id}}/receipt",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions",
+                "{{transaction_id}}",
+                "receipt"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text",
+                "exec": [
+                  "pm.test('Data nota berhasil diambil', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data.invoice_no).to.be.a('string');",
+                  "    pm.expect(body.data.items).to.be.an('array');",
+                  "    pm.expect(body.data.total).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Print or Save Digital Receipt",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/transactions/{{transaction_id}}/receipt/print",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions",
+                "{{transaction_id}}",
+                "receipt",
+                "print"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text",
+                "exec": [
+                  "pm.test('Halaman nota digital berhasil diambil', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/html');",
+                  "    pm.expect(pm.response.text()).to.include('Cetak / Simpan PDF');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Void Transaction (Owner)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Koreksi input kasir\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/transactions/{{transaction_id}}/void",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions",
+                "{{transaction_id}}",
+                "void"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text",
+                "exec": [
+                  "pm.test('Void transaksi berhasil', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data.status).to.eql('void');",
+                  "    pm.expect(body.data.void_reason).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 U-05 - final above subtotal",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text",
+                "exec": [
+                  "pm.test('Kegagalan 422 memiliki errors.final_total', function () {",
+                  "    pm.response.to.have.status(422);",
+                  "    pm.expect(pm.response.json().errors).to.have.property('final_total');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\r\n  \"client_uuid\": \"4fffaf98-1269-497a-b33e-d77c8186d424\",\r\n  \"customer_category\": \"ecer\",\r\n  \"items\": [\r\n    {\r\n      \"product_id\": \"{{product_id}}\",\r\n      \"weight_kg\": \"2.727\"\r\n    }\r\n  ],\r\n  \"payment_method\": \"cash\",\r\n  \"final_total\": 80000,\r\n  \"amount_paid\": 100000\r\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "raw": "{{base_url}}{{api_prefix}}/transactions"
+            }
+          }
+        },
+        {
+          "name": "422 U-06 - paid below final",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text",
+                "exec": [
+                  "pm.test('Kegagalan 422 memiliki errors.amount_paid', function () {",
+                  "    pm.response.to.have.status(422);",
+                  "    pm.expect(pm.response.json().errors).to.have.property('amount_paid');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\r\n  \"client_uuid\": \"98a8b6b5-c285-4bc4-b1b4-0660940ba5f9\",\r\n  \"customer_category\": \"ecer\",\r\n  \"items\": [\r\n    {\r\n      \"product_id\": \"{{product_id}}\",\r\n      \"weight_kg\": \"2.727\"\r\n    }\r\n  ],\r\n  \"payment_method\": \"cash\",\r\n  \"final_total\": 75000,\r\n  \"amount_paid\": 70000\r\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "raw": "{{base_url}}{{api_prefix}}/transactions"
+            }
+          }
+        },
+        {
+          "name": "422 U-07 - paid one rupiah below",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text",
+                "exec": [
+                  "pm.test('Kegagalan 422 memiliki errors.amount_paid', function () {",
+                  "    pm.response.to.have.status(422);",
+                  "    pm.expect(pm.response.json().errors).to.have.property('amount_paid');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\r\n  \"client_uuid\": \"f6503eb7-3a35-42c4-a040-af40e29c4b57\",\r\n  \"customer_category\": \"ecer\",\r\n  \"items\": [\r\n    {\r\n      \"product_id\": \"{{product_id}}\",\r\n      \"weight_kg\": \"2.727\"\r\n    }\r\n  ],\r\n  \"payment_method\": \"cash\",\r\n  \"final_total\": 70000,\r\n  \"amount_paid\": 69999\r\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "raw": "{{base_url}}{{api_prefix}}/transactions"
+            }
+          }
+        },
+        {
+          "name": "422 U-08 - QRIS mismatch",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text",
+                "exec": [
+                  "pm.test('Kegagalan 422 memiliki errors.amount_paid', function () {",
+                  "    pm.response.to.have.status(422);",
+                  "    pm.expect(pm.response.json().errors).to.have.property('amount_paid');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\r\n  \"client_uuid\": \"409d8a96-b9ac-4158-ba8d-9eef28721b7b\",\r\n  \"customer_category\": \"ecer\",\r\n  \"items\": [\r\n    {\r\n      \"product_id\": \"{{product_id}}\",\r\n      \"weight_kg\": \"2.727\"\r\n    }\r\n  ],\r\n  \"payment_method\": \"qris\",\r\n  \"final_total\": 70000,\r\n  \"amount_paid\": 100000\r\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "raw": "{{base_url}}{{api_prefix}}/transactions"
+            }
+          }
+        },
+        {
+          "name": "422 U-10 - final zero",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text",
+                "exec": [
+                  "pm.test('Kegagalan 422 memiliki errors.final_total', function () {",
+                  "    pm.response.to.have.status(422);",
+                  "    pm.expect(pm.response.json().errors).to.have.property('final_total');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\r\n  \"client_uuid\": \"120ddc37-291e-4ed8-bea2-3b016a61eed0\",\r\n  \"customer_category\": \"ecer\",\r\n  \"items\": [\r\n    {\r\n      \"product_id\": \"{{product_id}}\",\r\n      \"weight_kg\": \"2.727\"\r\n    }\r\n  ],\r\n  \"payment_method\": \"cash\",\r\n  \"final_total\": 0,\r\n  \"amount_paid\": 100000\r\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "raw": "{{base_url}}{{api_prefix}}/transactions"
+            }
+          }
+        },
+        {
+          "name": "422 U-11 - final null",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text",
+                "exec": [
+                  "pm.test('Kegagalan 422 memiliki errors.final_total', function () {",
+                  "    pm.response.to.have.status(422);",
+                  "    pm.expect(pm.response.json().errors).to.have.property('final_total');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\r\n  \"client_uuid\": \"14902246-1da4-41f8-9469-aec00eee4d86\",\r\n  \"customer_category\": \"ecer\",\r\n  \"items\": [\r\n    {\r\n      \"product_id\": \"{{product_id}}\",\r\n      \"weight_kg\": \"2.727\"\r\n    }\r\n  ],\r\n  \"payment_method\": \"cash\",\r\n  \"final_total\": null,\r\n  \"amount_paid\": 100000\r\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "raw": "{{base_url}}{{api_prefix}}/transactions"
+            }
+          }
+        },
+        {
+          "name": "422 U-12 - final missing",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text",
+                "exec": [
+                  "pm.test('Kegagalan 422 memiliki errors.final_total', function () {",
+                  "    pm.response.to.have.status(422);",
+                  "    pm.expect(pm.response.json().errors).to.have.property('final_total');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\r\n  \"client_uuid\": \"1af59185-ef3a-4db0-bdba-0324a910e3ef\",\r\n  \"customer_category\": \"ecer\",\r\n  \"items\": [\r\n    {\r\n      \"product_id\": \"{{product_id}}\",\r\n      \"weight_kg\": \"2.727\"\r\n    }\r\n  ],\r\n  \"payment_method\": \"cash\",\r\n  \"amount_paid\": 100000\r\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "raw": "{{base_url}}{{api_prefix}}/transactions"
+            }
+          }
+        },
+        {
+          "name": "422 U-13a - final text",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text",
+                "exec": [
+                  "pm.test('Kegagalan 422 memiliki errors.final_total', function () {",
+                  "    pm.response.to.have.status(422);",
+                  "    pm.expect(pm.response.json().errors).to.have.property('final_total');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\r\n  \"client_uuid\": \"6ebf2b09-8720-4738-b2e0-809a58dba875\",\r\n  \"customer_category\": \"ecer\",\r\n  \"items\": [\r\n    {\r\n      \"product_id\": \"{{product_id}}\",\r\n      \"weight_kg\": \"2.727\"\r\n    }\r\n  ],\r\n  \"payment_method\": \"cash\",\r\n  \"final_total\": \"abc\",\r\n  \"amount_paid\": 100000\r\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "raw": "{{base_url}}{{api_prefix}}/transactions"
+            }
+          }
+        },
+        {
+          "name": "422 U-13b - final fractional",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text",
+                "exec": [
+                  "pm.test('Kegagalan 422 memiliki errors.final_total', function () {",
+                  "    pm.response.to.have.status(422);",
+                  "    pm.expect(pm.response.json().errors).to.have.property('final_total');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\r\n  \"client_uuid\": \"601b6f8f-70b6-4904-9c4a-6e1b7e02f4ed\",\r\n  \"customer_category\": \"ecer\",\r\n  \"items\": [\r\n    {\r\n      \"product_id\": \"{{product_id}}\",\r\n      \"weight_kg\": \"2.727\"\r\n    }\r\n  ],\r\n  \"payment_method\": \"cash\",\r\n  \"final_total\": 70000.5,\r\n  \"amount_paid\": 100000\r\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "raw": "{{base_url}}{{api_prefix}}/transactions"
+            }
+          }
+        },
+        {
+          "name": "422 amount_paid zero",
+          "event": [
+            {
+              "script": {
+                "exec": [
+                  "pm.test('Kegagalan 422 memiliki errors.amount_paid', function () {",
+                  "    pm.response.to.have.status(422);",
+                  "    pm.expect(pm.response.json().errors).to.have.property('amount_paid');",
+                  "});"
+                ],
+                "type": "text"
+              },
+              "listen": "test"
+            }
+          ],
+          "request": {
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "raw": "{{base_url}}{{api_prefix}}/transactions"
+            },
+            "body": {
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "mode": "raw",
+              "raw": "{\r\n  \"client_uuid\": \"305bfd1c-b5a7-4bd9-ab68-2c60b2842168\",\r\n  \"customer_category\": \"ecer\",\r\n  \"items\": [\r\n    {\r\n      \"product_id\": \"{{product_id}}\",\r\n      \"weight_kg\": \"2.727\"\r\n    }\r\n  ],\r\n  \"payment_method\": \"cash\",\r\n  \"final_total\": 75000,\r\n  \"amount_paid\": 0\r\n}"
+            },
+            "method": "POST"
+          }
+        },
+        {
+          "name": "422 amount_paid missing",
+          "event": [
+            {
+              "script": {
+                "exec": [
+                  "pm.test('Kegagalan 422 memiliki errors.amount_paid', function () {",
+                  "    pm.response.to.have.status(422);",
+                  "    pm.expect(pm.response.json().errors).to.have.property('amount_paid');",
+                  "});"
+                ],
+                "type": "text"
+              },
+              "listen": "test"
+            }
+          ],
+          "request": {
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "raw": "{{base_url}}{{api_prefix}}/transactions"
+            },
+            "body": {
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "mode": "raw",
+              "raw": "{\r\n  \"client_uuid\": \"9e5bf92f-a509-4992-bb9f-356c76cbd145\",\r\n  \"customer_category\": \"ecer\",\r\n  \"items\": [\r\n    {\r\n      \"product_id\": \"{{product_id}}\",\r\n      \"weight_kg\": \"2.727\"\r\n    }\r\n  ],\r\n  \"payment_method\": \"cash\",\r\n  \"final_total\": 75000\r\n}"
+            },
+            "method": "POST"
+          }
+        },
+        {
+          "name": "422 amount_paid text",
+          "event": [
+            {
+              "script": {
+                "exec": [
+                  "pm.test('Kegagalan 422 memiliki errors.amount_paid', function () {",
+                  "    pm.response.to.have.status(422);",
+                  "    pm.expect(pm.response.json().errors).to.have.property('amount_paid');",
+                  "});"
+                ],
+                "type": "text"
+              },
+              "listen": "test"
+            }
+          ],
+          "request": {
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "raw": "{{base_url}}{{api_prefix}}/transactions"
+            },
+            "body": {
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "mode": "raw",
+              "raw": "{\r\n  \"client_uuid\": \"2a1e3dd7-1dc3-4c0f-b2b3-b74784c7605b\",\r\n  \"customer_category\": \"ecer\",\r\n  \"items\": [\r\n    {\r\n      \"product_id\": \"{{product_id}}\",\r\n      \"weight_kg\": \"2.727\"\r\n    }\r\n  ],\r\n  \"payment_method\": \"cash\",\r\n  \"final_total\": 75000,\r\n  \"amount_paid\": \"abc\"\r\n}"
+            },
+            "method": "POST"
+          }
+        },
+        {
+          "name": "422 amount_paid fractional",
+          "event": [
+            {
+              "script": {
+                "exec": [
+                  "pm.test('Kegagalan 422 memiliki errors.amount_paid', function () {",
+                  "    pm.response.to.have.status(422);",
+                  "    pm.expect(pm.response.json().errors).to.have.property('amount_paid');",
+                  "});"
+                ],
+                "type": "text"
+              },
+              "listen": "test"
+            }
+          ],
+          "request": {
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "raw": "{{base_url}}{{api_prefix}}/transactions"
+            },
+            "body": {
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "mode": "raw",
+              "raw": "{\r\n  \"client_uuid\": \"cf8d2739-8aa3-46e0-84d8-ea5ca53b78bc\",\r\n  \"customer_category\": \"ecer\",\r\n  \"items\": [\r\n    {\r\n      \"product_id\": \"{{product_id}}\",\r\n      \"weight_kg\": \"2.727\"\r\n    }\r\n  ],\r\n  \"payment_method\": \"cash\",\r\n  \"final_total\": 75000,\r\n  \"amount_paid\": 100000.5\r\n}"
+            },
+            "method": "POST"
+          }
+        },
+        {
+          "name": "422 amount_paid above maximum",
+          "event": [
+            {
+              "script": {
+                "exec": [
+                  "pm.test('Kegagalan 422 memiliki errors.amount_paid', function () {",
+                  "    pm.response.to.have.status(422);",
+                  "    pm.expect(pm.response.json().errors).to.have.property('amount_paid');",
+                  "});"
+                ],
+                "type": "text"
+              },
+              "listen": "test"
+            }
+          ],
+          "request": {
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions"
+              ],
+              "raw": "{{base_url}}{{api_prefix}}/transactions"
+            },
+            "body": {
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "mode": "raw",
+              "raw": "{\r\n  \"client_uuid\": \"b598fcbf-8e31-4ec9-909d-1c83e71f07e5\",\r\n  \"customer_category\": \"ecer\",\r\n  \"items\": [\r\n    {\r\n      \"product_id\": \"{{product_id}}\",\r\n      \"weight_kg\": \"2.727\"\r\n    }\r\n  ],\r\n  \"payment_method\": \"cash\",\r\n  \"final_total\": 75000,\r\n  \"amount_paid\": 1000000001\r\n}"
+            },
+            "method": "POST"
+          }
+        },
+        {
+          "name": "422 Quote U-21 - final above subtotal",
+          "event": [
+            {
+              "script": {
+                "type": "text",
+                "exec": [
+                  "pm.test('Quote mengembalikan 422', function () {{",
+                  "    pm.response.to.have.status(422);",
+                  "});"
+                ]
+              },
+              "listen": "test"
+            }
+          ],
+          "request": {
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions",
+                "quote"
+              ],
+              "raw": "{{base_url}}{{api_prefix}}/transactions/quote"
+            },
+            "body": {
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "mode": "raw",
+              "raw": "{\r\n  \"items\": [\r\n    {\r\n      \"weight_kg\": \"2.727\",\r\n      \"product_id\": \"{{product_id}}\"\r\n    }\r\n  ],\r\n  \"final_total\": 80000,\r\n  \"customer_category\": \"ecer\"\r\n}"
+            },
+            "method": "POST"
+          }
+        },
+        {
+          "name": "422 Quote U-22 - final zero",
+          "event": [
+            {
+              "script": {
+                "type": "text",
+                "exec": [
+                  "pm.test('Quote mengembalikan 422', function () {{",
+                  "    pm.response.to.have.status(422);",
+                  "});"
+                ]
+              },
+              "listen": "test"
+            }
+          ],
+          "request": {
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "transactions",
+                "quote"
+              ],
+              "raw": "{{base_url}}{{api_prefix}}/transactions/quote"
+            },
+            "body": {
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "mode": "raw",
+              "raw": "{\r\n  \"items\": [\r\n    {\r\n      \"weight_kg\": \"2.727\",\r\n      \"product_id\": \"{{product_id}}\"\r\n    }\r\n  ],\r\n  \"final_total\": 0,\r\n  \"customer_category\": \"ecer\"\r\n}"
+            },
+            "method": "POST"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Suppliers and Purchases (Owner)",
+      "item": [
+        {
+          "name": "Create Supplier",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Supplier Bawang\",\n  \"phone\": \"08123456789\",\n  \"note\": \"Kirim pagi\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/suppliers",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "suppliers"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Suppliers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/suppliers",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "suppliers"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Supplier",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Supplier Bawang Utama\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/suppliers/{{supplier_id}}",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "suppliers",
+                "{{supplier_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Purchase",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supplier_id\": 1,\n  \"purchased_at\": \"2026-10-19\",\n  \"jenis\": \"merah\",\n  \"gross_weight_kg\": \"100.000\",\n  \"price_per_kg\": 17000,\n  \"notes\": \"Batch contoh doc 01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/purchases",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "purchases"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Kulak tersimpan dan purchase_id tersedia', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const data = pm.response.json().data;",
+                  "    pm.expect(data.jenis).to.be.oneOf(['merah', 'putih']);",
+                  "    pm.environment.set('purchase_id', data.id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create White Purchase",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"supplier_id\": 1,\r\n  \"purchased_at\": \"2026-10-19\",\r\n  \"jenis\": \"putih\",\r\n  \"gross_weight_kg\": \"100.000\",\r\n  \"price_per_kg\": 17000,\r\n  \"notes\": \"Batch contoh doc 01\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/purchases",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "purchases"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Kulak tersimpan dan purchase_id tersedia', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const data = pm.response.json().data;",
+                  "    pm.expect(data.jenis).to.be.oneOf(['merah', 'putih']);",
+                  "    pm.environment.set('purchase_id', data.id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Purchases",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/purchases",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "purchases"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List White Purchases",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/purchases?jenis=putih&per_page=50",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "purchases"
+              ],
+              "query": [
+                {
+                  "key": "jenis",
+                  "value": "putih",
+                  "description": "Filter batch untuk baris produk bawang putih."
+                },
+                {
+                  "key": "per_page",
+                  "value": "50",
+                  "description": "Ambil maksimal 50 kulak per halaman."
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Daftar hanya memuat kulak putih', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data).to.be.an('array');",
+                  "    body.data.forEach(function (purchase) { pm.expect(purchase.jenis).to.eql('putih'); });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Purchase",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/purchases/{{purchase_id}}",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "purchases",
+                "{{purchase_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Purchase",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supplier_id\": 1,\n  \"purchased_at\": \"2026-10-22\",\n  \"jenis\": \"merah\",\n  \"gross_weight_kg\": \"100.000\",\n  \"price_per_kg\": 17000,\n  \"notes\": \"Batch diperbarui\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/purchases/{{purchase_id}}",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "purchases",
+                "{{purchase_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete Purchase",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/purchases/{{purchase_id}}",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "purchases",
+                "{{purchase_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Stock",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/stock",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "stock"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text",
+                "exec": [
+                  "pm.test('Setiap baris stok mengidentifikasi produk dan jenis bawang', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data).to.be.an('array');",
+                  "    body.data.forEach(function (row) {",
+                  "        pm.expect(row.product_id).to.be.a('number').and.greaterThan(0);",
+                  "        pm.expect(row.name).to.be.a('string').and.not.empty;",
+                  "        pm.expect(['merah', 'putih']).to.include(row.jenis);",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Stock Count",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purchase_id\": {{purchase_id}},\n  \"product_id\": {{product_id}},\n  \"counted_weight_kg\": \"18.500\",\n  \"counted_at\": \"2026-11-11T10:00:00+07:00\",\n  \"notes\": \"Hitung display pagi\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/stock-counts",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "stock-counts"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Stock Counts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/stock-counts",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "stock-counts"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Cancel Stock Count",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Koreksi hitung ulang\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/stock-counts/{{stock_count_id}}",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "stock-counts",
+                "{{stock_count_id}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Expenses and Reports (Owner)",
+      "item": [
+        {
+          "name": "List Expenses",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/expenses?per_page=20",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "expenses"
+              ],
+              "query": [
+                {
+                  "key": "per_page",
+                  "value": "20",
+                  "description": "Jumlah baris per halaman (maksimal 50)."
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Expense Name Suggestions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/expenses/suggestions",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "expenses",
+                "suggestions"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Expense Categories",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/expenses/categories",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "expenses",
+                "categories"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Expense",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Listrik toko\",\n  \"amount\": 50000,\n  \"spent_at\": \"2026-10-22\",\n  \"notes\": \"Tagihan bulan Oktober\",\n  \"category\": \"listrik_air\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/expenses",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "expenses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Expense",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sewa toko\",\n  \"amount\": 75000,\n  \"spent_at\": \"2026-10-23\",\n  \"notes\": null,\n  \"category\": \"sewa_retribusi\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/expenses/{{expense_id}}",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "expenses",
+                "{{expense_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete Expense",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Koreksi input\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/expenses/{{expense_id}}",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "expenses",
+                "{{expense_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Finance Report Monthly",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/reports/finance?period=monthly&month=2026-10",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "reports",
+                "finance"
+              ],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "monthly"
+                },
+                {
+                  "key": "month",
+                  "value": "2026-10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Sales by Product Report",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/reports/sales-by-product?from=2026-10-22&to=2026-10-22",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "reports",
+                "sales-by-product"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-10-22"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-10-22"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Stock Report",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/reports/stock?from=2026-10-01&to=2026-10-27",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "reports",
+                "stock"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-10-01"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-10-27"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Shift Report",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/reports/shifts?date=2026-10-22",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "reports",
+                "shifts"
+              ],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "2026-10-22"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Audit Logs (Owner)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/audit-logs?action=product.price_changed&from=2026-10-22&to=2026-10-22&page=1&per_page=20",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "audit-logs"
+              ],
+              "query": [
+                {
+                  "key": "action",
+                  "value": "product.price_changed"
+                },
+                {
+                  "key": "from",
+                  "value": "2026-10-22"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-10-22"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

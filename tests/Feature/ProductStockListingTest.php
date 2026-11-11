@@ -90,6 +90,28 @@ it('PR-03 returns zero weight and value for a product without stock movements or
     expect($row['stock_kg'])->toBe('0.000')->and($row['stock_value'])->toBe(0);
 });
 
+it('returns product identity and canonical jenis on every stock row', function () {
+    [, $token] = catalogStockUser('owner');
+    $red = Product::query()->create([
+        'name' => 'Merah Grade A', 'jenis' => 'merah', 'price_retail' => 27500, 'price_5kg' => 24000,
+    ]);
+    $white = Product::query()->create([
+        'name' => 'Putih Grade A', 'jenis' => 'putih', 'price_retail' => 27500, 'price_5kg' => 24000,
+    ]);
+
+    $rows = $this->withToken($token)->getJson('/api/v1/stock')->assertOk()->json('data');
+
+    expect($rows)->toHaveCount(2);
+    foreach ($rows as $row) {
+        expect($row)->toHaveKeys(['product_id', 'name', 'jenis'])
+            ->and($row['product_id'])->toBeInt()->toBeGreaterThan(0)
+            ->and($row['name'])->toBeString()->not->toBeEmpty()
+            ->and($row['jenis'])->toBeIn(['merah', 'putih']);
+    }
+    expect(collect($rows)->firstWhere('product_id', $red->id)['jenis'])->toBe('merah')
+        ->and(collect($rows)->firstWhere('product_id', $white->id)['jenis'])->toBe('putih');
+});
+
 it('PR-04 filters owner products using active equal to zero or one', function () {
     [, $token] = catalogStockUser('owner');
     catalogStockProduct('Aktif', true);

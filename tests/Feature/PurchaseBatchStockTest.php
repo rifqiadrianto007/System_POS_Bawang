@@ -22,9 +22,9 @@ function batchStockProduct(string $name, string $jenis): Product
     return Product::query()->create(['name' => $name, 'jenis' => $jenis, 'price_retail' => 27000, 'price_5kg' => 23000]);
 }
 
-function batchStockPurchasePayload(int $supplierId): array
+function batchStockPurchasePayload(int $supplierId, string $jenis = 'merah'): array
 {
-    return ['supplier_id' => $supplierId, 'purchased_at' => now('Asia/Jakarta')->toDateString(), 'jenis' => 'merah',
+    return ['supplier_id' => $supplierId, 'purchased_at' => now('Asia/Jakarta')->toDateString(), 'jenis' => $jenis,
         'gross_weight_kg' => '100.000', 'price_per_kg' => 21000, 'notes' => null];
 }
 
@@ -44,6 +44,31 @@ it('records purchase weight as warehouse stock without draft or finalization sta
 
     $this->withToken($token)->getJson("/api/v1/purchases/{$purchase['id']}")
         ->assertOk()->assertJsonMissingPath('data.closed_at');
+});
+
+it('filters purchase batches by jenis and returns matching stock product identity', function () {
+    [, $token] = batchStockOwner();
+    $supplier = Supplier::query()->create(['name' => 'Pemasok Filter Jenis']);
+    $redProduct = batchStockProduct('Merah Filter A', 'merah');
+    $whiteProduct = batchStockProduct('Putih Filter A', 'putih');
+
+    $redPurchase = $this->withToken($token)->postJson('/api/v1/purchases', batchStockPurchasePayload($supplier->id, 'merah'))
+        ->assertCreated()->json('data');
+    $whitePurchase = $this->withToken($token)->postJson('/api/v1/purchases', batchStockPurchasePayload($supplier->id, 'putih'))
+        ->assertCreated()->assertJsonPath('data.jenis', 'putih')->json('data');
+
+    $whiteResults = $this->withToken($token)->getJson('/api/v1/purchases?jenis=putih&per_page=50')
+        ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $whitePurchase['id'])
+        ->assertJsonPath('data.0.jenis', 'putih')->json('data');
+    expect($whiteResults)->toHaveCount(1)
+        ->and($whiteResults[0]['code'])->toBe($whitePurchase['code'])
+        ->and($redPurchase['id'])->not->toBe($whiteResults[0]['id']);
+
+    $stockRows = $this->withToken($token)->getJson('/api/v1/stock')->assertOk()->json('data');
+    expect(collect($stockRows)->firstWhere('product_id', $redProduct->id))
+        ->toMatchArray(['product_id' => $redProduct->id, 'name' => 'Merah Filter A', 'jenis' => 'merah'])
+        ->and(collect($stockRows)->firstWhere('product_id', $whiteProduct->id))
+        ->toMatchArray(['product_id' => $whiteProduct->id, 'name' => 'Putih Filter A', 'jenis' => 'putih']);
 });
 
 it('links batch recounts to display lots and reports 55 kg sorted from 100 kg', function () {
