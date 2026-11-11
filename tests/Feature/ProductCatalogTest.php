@@ -23,6 +23,7 @@ it('allows an owner to create a product and records an audit log', function () {
 
     $response = $this->withToken($token)->postJson('/api/v1/products', [
         'name' => 'Merah A',
+        'jenis' => 'merah',
         'price_retail' => 27500,
         'price_3kg' => 26000,
         'price_5kg' => 24000,
@@ -32,6 +33,7 @@ it('allows an owner to create a product and records an audit log', function () {
 
     $response->assertCreated()
         ->assertJsonPath('data.name', 'Merah A')
+        ->assertJsonPath('data.jenis', 'merah')
         ->assertJsonPath('data.price_retail', 27500);
 
     expect($product)->not->toBeNull()
@@ -49,6 +51,7 @@ it('allows an owner to update prices and records history and audit', function ()
 
     $response = $this->withToken($token)->putJson("/api/v1/products/{$product->id}", [
         'name' => 'Merah A',
+        'jenis' => 'merah',
         'price_retail' => 28000,
         'price_3kg' => 26500,
         'price_5kg' => 24500,
@@ -73,10 +76,13 @@ it('does not block a price order that needs owner review', function () {
 
     $this->withToken($token)->postJson('/api/v1/products', [
         'name' => 'Putih A',
+        'jenis' => 'putih',
         'price_retail' => 24000,
         'price_3kg' => 26000,
         'price_5kg' => 28000,
     ])->assertCreated();
+
+    expect(Product::query()->where('name', 'Putih A')->value('jenis'))->toBe('putih');
 });
 
 it('lists only active products for a cashier', function () {

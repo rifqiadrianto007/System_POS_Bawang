@@ -14,13 +14,9 @@ final class StockService
     /** @return array{products:list<array<string,mixed>>,totals:array{display_kg:string,warehouse_kg:string,stock_value:int}} */
     public function summaries(): array
     {
-        $warehouseMilli = 0;
-        foreach (Purchase::query()->whereNull('closed_at')->with('stockLots:id,purchase_id,weight_kg')->get() as $purchase) {
-            $sorted = 0;
-            foreach ($purchase->stockLots as $lot) {
-                $sorted += $this->averageCost->toMilli((string) $lot->weight_kg);
-            }
-            $warehouseMilli += max(0, $this->averageCost->toMilli((string) $purchase->gross_weight_kg) - $sorted);
+        $grossPurchaseMilli = 0;
+        foreach (Purchase::query()->get(['gross_weight_kg']) as $purchase) {
+            $grossPurchaseMilli += $this->averageCost->toMilli((string) ($purchase->gross_weight_kg ?? '0'));
         }
         $balances = StockMovement::query()->select('product_id')
             ->selectRaw('COALESCE(SUM(weight_kg),0) as stock_kg, COALESCE(SUM(value_delta),0) as stock_value')
@@ -48,7 +44,7 @@ final class StockService
                 'product_id' => (int) $product->id, 'name' => $product->name, 'jenis' => $product->jenis,
                 'is_active' => (bool) $product->is_active, 'stock_kg' => $this->averageCost->formatWeight($stockMilli),
                 'shortfall_kg' => $this->averageCost->formatWeight(max(0, -$stockMilli)),
-                'stock_value' => $stockValue, 'avg_cost' => $avgCost, 'last_count_date' => $counts[$product->id] ?? null,
+                'stock_value' => $stockValue, 'avg_cost' => $avgCost ?? 0, 'last_count_date' => $counts[$product->id] ?? null,
             ];
         })->all();
         $displayMilli = 0;
@@ -57,10 +53,11 @@ final class StockService
             $displayMilli += max(0, $this->averageCost->toMilli($product['stock_kg']));
             $value += (int) $product['stock_value'];
         }
+        $warehouseMilli = max(0, $grossPurchaseMilli - $displayMilli);
 
         return ['products' => $products, 'totals' => [
             'display_kg' => $this->averageCost->formatWeight($displayMilli),
-            'warehouse_kg' => $this->averageCost->formatWeight($warehouseMilli), 'stock_value' => $value,
+            'warehouse_kg' => $this->averageCost->formatWeight($warehouseMilli), 'stock_value' => $value, 'inventory_value' => $value,
         ]];
     }
 }

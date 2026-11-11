@@ -28,4 +28,5 @@ Thumbs.db
 .github/
 docs/
 AGENTS.md
-.postman/
+.postman/*
+!.postman/POS Bawang API v1.postman_collection.json

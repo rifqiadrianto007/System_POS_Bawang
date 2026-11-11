@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class StockCount extends Model
 {
-    protected $fillable = ['product_id', 'counted_weight_kg', 'system_weight_kg', 'diff_kg', 'unit_cost_avg', 'loss_value', 'counted_at', 'counted_by', 'notes', 'status', 'cancelled_at', 'cancelled_by_name', 'cancel_reason'];
+    protected $fillable = ['product_id', 'purchase_id', 'counted_weight_kg', 'system_weight_kg', 'diff_kg', 'unit_cost_avg', 'loss_value', 'counted_at', 'counted_by', 'notes', 'status', 'cancelled_at', 'cancelled_by_name', 'cancel_reason'];
 
     protected function casts(): array
     {
@@ -17,6 +17,11 @@ class StockCount extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function purchase(): BelongsTo
+    {
+        return $this->belongsTo(Purchase::class);
     }
 
     public function countedBy(): BelongsTo

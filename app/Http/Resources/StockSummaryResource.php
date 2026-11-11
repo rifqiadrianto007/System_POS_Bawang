@@ -17,7 +17,7 @@ class StockSummaryResource extends JsonResource
             'stock_kg' => $this->resource['stock_kg'],
             'shortfall_kg' => $this->resource['shortfall_kg'],
             'stock_value' => $this->resource['stock_value'],
-            'avg_cost' => $this->resource['avg_cost'],
+            'avg_cost' => $this->resource['avg_cost'] ?? 0,
             'last_count_date' => $this->resource['last_count_date'],
         ];
     }

@@ -32,7 +32,7 @@ function z04Product(string $name, string $jenis = 'merah'): Product
     return Product::query()->create(['name' => $name, 'jenis' => $jenis, 'price_retail' => 27000, 'price_5kg' => 24000]);
 }
 
-function z04Purchase(User $owner, string $date, string $gross, int $price, ?string $closedAt = null): Purchase
+function z04Purchase(User $owner, string $date, string $gross, int $price): Purchase
 {
     $supplier = Supplier::query()->create(['name' => 'Supplier '.$date.' '.$price]);
     $seq = Purchase::withTrashed()->count() + 1;
@@ -41,7 +41,7 @@ function z04Purchase(User $owner, string $date, string $gross, int $price, ?stri
         'code' => 'KLK-'.Carbon\Carbon::parse($date)->format('ymd').'-'.str_pad((string) $seq, 3, '0', STR_PAD_LEFT),
         'supplier_id' => $supplier->id, 'purchased_at' => $date, 'jenis' => 'merah',
         'gross_weight_kg' => $gross, 'price_per_kg' => $price,
-        'total_cost' => (int) bcmul($gross, (string) $price, 0), 'created_by' => $owner->id, 'closed_at' => $closedAt,
+        'total_cost' => (int) bcmul($gross, (string) $price, 0), 'created_by' => $owner->id,
     ]);
 }
 
@@ -138,26 +138,26 @@ it('SS-04 maps earlier unallocated shortfall sales when a later lot is added', f
     expect(z04PurchaseDetail($purchase)['sold_kg'])->toBe('2.000');
 });
 
-it('SS-05 recognizes cleaning loss on the WIB close date and removes it when reopened', function () {
+it('SS-05 has no cleaning loss recognition because kulak no longer has a close action', function () {
     $owner = z04Owner('ss05');
     $token = $owner->createToken('ss05')->plainTextToken;
     $product = z04Product('SS05');
-    $purchase = z04Purchase($owner, '2026-11-01', '100.000', 20000, '2026-11-02 17:30:00');
+    $purchase = z04Purchase($owner, '2026-11-01', '100.000', 20000);
     z04Lot($purchase, $product, $owner, '98.000', '2026-11-01');
-    $this->withToken($token)->getJson('/api/v1/reports/finance?period=daily&date=2026-11-03')->assertOk()->assertJsonPath('data.cleaning_loss_value', 40000)->assertJsonPath('data.daily.0.cleaning_loss_value', 40000);
-    $this->withToken($token)->postJson('/api/v1/purchases/'.$purchase->id.'/reopen')->assertOk();
-    $this->withToken($token)->getJson('/api/v1/reports/finance?period=daily&date=2026-11-03')->assertOk()->assertJsonPath('data.cleaning_loss_value', 0);
+    $this->withToken($token)->getJson('/api/v1/reports/finance?period=daily&date=2026-11-03')->assertOk()
+        ->assertJsonPath('data.cleaning_loss_value', 0)->assertJsonPath('data.daily.0.cleaning_loss_value', 0);
+    $this->withToken($token)->postJson('/api/v1/purchases/'.$purchase->id.'/close')->assertNotFound();
 });
 
-it('SS-06 counts only unsorted weight from purchases that remain open as warehouse stock', function () {
+it('SS-06 counts unmeasured gross weight from every batch as warehouse stock', function () {
     $owner = z04Owner('ss06');
     $token = $owner->createToken('ss06')->plainTextToken;
     $product = z04Product('SS06');
     $open = z04Purchase($owner, '2026-11-01', '100.000', 20000);
     z04Lot($open, $product, $owner, '70.000', '2026-11-01');
-    $closed = z04Purchase($owner, '2026-11-02', '50.000', 20000, '2026-11-03 01:00:00');
+    $closed = z04Purchase($owner, '2026-11-02', '50.000', 20000);
     z04Lot($closed, $product, $owner, '20.000', '2026-11-02');
-    $this->withToken($token)->getJson('/api/v1/reports/stock?from=2026-11-01&to=2026-11-03')->assertOk()->assertJsonPath('data.warehouse_kg', '30.000');
+    $this->withToken($token)->getJson('/api/v1/reports/stock?from=2026-11-01&to=2026-11-03')->assertOk()->assertJsonPath('data.warehouse_kg', '60.000');
 });
 
 it('SS-07 calculates weighted purchase price and null estimate for an empty purchase period', function () {
@@ -186,7 +186,7 @@ it('RP-01 returns the documented finance and stock example totals', function () 
     $owner = z04Owner('rp01');
     $token = $owner->createToken('rp01')->plainTextToken;
     $cashier = User::factory()->create(['role' => 'kasir', 'username' => 'z04-cash-rp01']);
-    $purchase = z04Purchase($owner, '2026-11-01', '100.000', 20000, '2026-11-02 17:00:00');
+    $purchase = z04Purchase($owner, '2026-11-01', '100.000', 20000);
     $products = [z04Product('A rp01'), z04Product('B rp01'), z04Product('C rp01')];
     foreach ([['40.000', '2026-11-01'], ['30.000', '2026-11-01'], ['28.000', '2026-11-01']] as $i => [$weight,$date]) {
         z04Lot($purchase, $products[$i], $owner, $weight, $date);
@@ -196,10 +196,10 @@ it('RP-01 returns the documented finance and stock example totals', function () 
     }
     Expense::query()->create(['name' => 'Operasional', 'category' => 'lainnya', 'amount' => 50000, 'spent_at' => '2026-11-02', 'created_by' => $owner->id]);
     $this->withToken($token)->getJson('/api/v1/reports/finance?from=2026-11-01&to=2026-11-03')->assertOk()
-        ->assertJsonPath('data.net_profit', 480000)->assertJsonPath('data.cash_flow', 420000)
-        ->assertJsonPath('data.cleaning_loss_value', 40000);
+        ->assertJsonPath('data.net_profit', 520000)->assertJsonPath('data.cash_flow', 420000)
+        ->assertJsonPath('data.cleaning_loss_value', 0);
     $this->withToken($token)->getJson('/api/v1/reports/stock?from=2026-11-01&to=2026-11-03')->assertOk()
-        ->assertJsonPath('data.sold_kg', '95.000')->assertJsonPath('data.cleaning_loss_value', 40000)->assertJsonPath('data.susut_kg', '5.000');
+        ->assertJsonPath('data.sold_kg', '95.000')->assertJsonPath('data.cleaning_loss_value', 0)->assertJsonPath('data.susut_kg', '5.000');
 });
 
 it('RP-02 preserves the lifetime accounting identity for a deterministic ledger fixture', function () {
@@ -220,11 +220,7 @@ it('RP-02 preserves the lifetime accounting identity for a deterministic ledger 
         if ($sold > 0) {
             z04Sale($cashier, $product, $sold.'.000', $sold * ($price + 5000), $sold * $price, 'z04-rp02-'.$i);
         }
-        if ($i % 2 === 1) {
-            app(PurchaseService::class)->close($purchase, $owner->id);
-        } else {
-            $warehouseValue += $unsorted * $price;
-        }
+        $warehouseValue += $unsorted * $price;
     }
     $finance = $this->withToken($token)->getJson('/api/v1/reports/finance?from=2026-11-01&to=2026-11-30')->assertOk()->json('data');
     $stock = $this->withToken($token)->getJson('/api/v1/reports/stock?from=2026-11-01&to=2026-11-30')->assertOk()->json('data');
@@ -243,8 +239,8 @@ it('RP-03 returns exactly the stock report top-level and product keys', function
 it('RP-04 reconciles cleaning loss total to daily rows and their net profit sum', function () {
     $owner = z04Owner('rp04');
     $token = $owner->createToken('rp04')->plainTextToken;
-    foreach ([['2026-11-01', '10.000', '10000', '2026-11-01 17:00:00'], ['2026-11-02', '20.000', '10000', '2026-11-02 17:00:00']] as [$date,$gross,$price,$closed]) {
-        $purchase = z04Purchase($owner, $date, $gross, (int) $price, $closed);
+    foreach ([['2026-11-01', '10.000', '10000'], ['2026-11-02', '20.000', '10000']] as [$date,$gross,$price]) {
+        $purchase = z04Purchase($owner, $date, $gross, (int) $price);
         $product = z04Product('RP04 '.$date);
         z04Lot($purchase, $product, $owner, '5.000', $date);
     }

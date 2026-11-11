@@ -62,19 +62,7 @@ final class ReportService
             ->where('spent_at', '>=', $localStart)->where('spent_at', '<', $localEnd)->groupBy('report_date')->get()->keyBy('report_date');
         $purchaseRows = Purchase::query()->selectRaw('DATE(purchased_at) as report_date, SUM(total_cost) as purchases_total')
             ->where('purchased_at', '>=', $localStart)->where('purchased_at', '<', $localEnd)->groupBy('report_date')->get()->keyBy('report_date');
-        $closedPurchases = Purchase::query()->withSum('stockLots as sorted_kg', 'weight_kg')
-            ->whereNotNull('closed_at')->where('closed_at', '>=', $start)->where('closed_at', '<', $end)
-            ->get();
         $cleaningByDate = [];
-        $cleaningKgTotal = 0;
-        foreach ($closedPurchases as $purchase) {
-            $date = Carbon::parse($purchase->closed_at)->setTimezone('Asia/Jakarta')->toDateString();
-            $unsorted = max(0, $this->averageCost->toMilli((string) $purchase->gross_weight_kg)
-                - $this->averageCost->toMilli((string) ($purchase->sorted_kg ?? '0')));
-            $loss = $this->valueForWeight($unsorted, (int) $purchase->price_per_kg);
-            $cleaningByDate[$date] = ($cleaningByDate[$date] ?? 0) + $loss;
-            $cleaningKgTotal += $unsorted;
-        }
         foreach ($dateMap as $date => &$row) {
             $sales = $salesRows->get($date);
             $row['net_sales'] = (int) ($sales->net_sales ?? 0);
@@ -119,7 +107,7 @@ final class ReportService
             'cleaning_loss_value' => $cleaningLossValue,
             'operating_expenses' => $operatingExpenses, 'net_profit' => $sum('net_profit'), 'purchases_total' => $purchasesTotal,
             'cash_flow' => $netSales - $totalSpending,
-            'cleaning_shrink_kg' => $this->averageCost->formatWeight($cleaningKgTotal),
+            'cleaning_shrink_kg' => '0.000',
             'shortfall_count' => (int) $shortfallCount, 'void_count' => (int) $voidCount,
         ];
     }
@@ -185,22 +173,14 @@ final class ReportService
             ->selectRaw('COALESCE(SUM(weight_kg), 0) AS total')->value('total');
         $sorted = $this->toMilli((string) $sortedRaw);
         $warehouse = 0;
-        $openPurchases = Purchase::query()->whereNull('closed_at')->withSum('stockLots as sorted_kg', 'weight_kg')->get();
-        foreach ($openPurchases as $purchase) {
+        $purchasesWithCounts = Purchase::query()->withSum('stockLots as sorted_kg', 'weight_kg')->get();
+        foreach ($purchasesWithCounts as $purchase) {
             $warehouse += max(0, $this->toMilli((string) $purchase->gross_weight_kg)
                 - $this->toMilli((string) ($purchase->sorted_kg ?? '0')));
         }
 
-        $closedPurchases = Purchase::query()->withSum('stockLots as sorted_kg', 'weight_kg')
-            ->whereNotNull('closed_at')->where('closed_at', '>=', $start)->where('closed_at', '<', $end)
-            ->get();
-        $cleaningKg = $cleaningValue = 0;
-        foreach ($closedPurchases as $purchase) {
-            $unsorted = max(0, $this->toMilli((string) $purchase->gross_weight_kg)
-                - $this->toMilli((string) ($purchase->sorted_kg ?? '0')));
-            $cleaningKg += $unsorted;
-            $cleaningValue += $this->valueForWeight($unsorted, (int) $purchase->price_per_kg);
-        }
+        $cleaningKg = 0;
+        $cleaningValue = 0;
 
         $soldRows = TransactionItem::query()->join('transactions', 'transactions.id', '=', 'transaction_items.transaction_id')
             ->where('transactions.status', 'completed')->where('transactions.occurred_at', '>=', $start)->where('transactions.occurred_at', '<', $end)

@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Models\AuditLog;
 use App\Models\Product;
+use App\Models\Purchase;
 use App\Models\StockCount;
+use App\Models\StockLot;
 use App\Models\StockMovement;
 use App\Models\User;
 use Carbon\Carbon;
@@ -21,31 +23,47 @@ final class StockCountService
     {
         return DB::transaction(function () use ($attributes, $ownerId): StockCount {
             $product = Product::query()->lockForUpdate()->findOrFail($attributes['product_id']);
+            $purchase = Purchase::query()->lockForUpdate()->findOrFail($attributes['purchase_id']);
+            if ($purchase->jenis !== $product->jenis) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['product_id' => 'Jenis produk harus sama dengan jenis kulak.']);
+            }
             $balance = $this->averageCost->stock($product);
-            $systemMilli = $this->averageCost->toMilli($balance['stock_kg']);
+            $lot = StockLot::query()->where('purchase_id', $purchase->id)->where('product_id', $product->id)->lockForUpdate()->first();
+            $newBatchStock = $lot === null;
+            $systemMilli = $lot === null ? 0 : $this->lotBalanceMilli($lot->id);
             $countedMilli = $this->averageCost->toMilli((string) $attributes['counted_weight_kg']);
             $diffMilli = $countedMilli - $systemMilli;
             $occurredAt = Carbon::parse((string) $attributes['counted_at']);
-            $avgCost = $balance['avg_cost'] ?? (int) ($product->last_unit_cost ?? 0);
+            $avgCost = $balance['avg_cost'] ?? (int) $purchase->price_per_kg;
             $lossValue = 0;
             $valueDelta = 0;
 
-            if ($systemMilli > 0) {
-                if ($diffMilli < 0) {
-                    $lossValue = $this->averageCost->valueForWeight(abs($diffMilli), $avgCost);
-                    $valueDelta = -$lossValue;
-                } elseif ($diffMilli > 0) {
-                    $lossValue = -$this->averageCost->valueForWeight($diffMilli, $avgCost);
-                    $valueDelta = -$lossValue;
+            if ($newBatchStock && $countedMilli > 0) {
+                $valueDelta = $this->averageCost->valueForWeight($countedMilli, (int) $purchase->price_per_kg);
+            } elseif ($diffMilli !== 0) {
+                $valueDelta = $this->averageCost->valueForWeight(abs($diffMilli), $avgCost) * ($diffMilli > 0 ? 1 : -1);
+                if ($balance['stock_kg'] !== '0.000' && $this->averageCost->toMilli($balance['stock_kg']) > 0) {
+                    $lossValue = -$valueDelta;
                 }
-            } else {
-                $targetValue = $this->averageCost->valueForWeight($countedMilli, (int) ($product->last_unit_cost ?? 0));
-                $valueDelta = $targetValue - $balance['stock_value'];
-                $lossValue = 0;
+            }
+
+            if ($lot === null && $countedMilli > 0) {
+                $lot = $purchase->stockLots()->create([
+                    'product_id' => $product->id,
+                    'weight_kg' => $this->averageCost->formatWeight($countedMilli),
+                    'sorted_at' => $occurredAt->copy()->setTimezone('Asia/Jakarta')->toDateString(),
+                    'unit_cost' => (int) $purchase->price_per_kg,
+                    'notes' => 'Stok display tercatat melalui hitung ulang',
+                    'created_by' => $ownerId,
+                ]);
+            }
+            if ($lot !== null) {
+                $lot->update(['weight_kg' => $this->averageCost->formatWeight($countedMilli)]);
             }
 
             $count = StockCount::query()->create([
                 'product_id' => $product->id,
+                'purchase_id' => $purchase->id,
                 'counted_weight_kg' => $this->averageCost->formatWeight($countedMilli),
                 'system_weight_kg' => $this->averageCost->formatWeight($systemMilli),
                 'diff_kg' => $this->averageCost->formatWeight($diffMilli),
@@ -63,6 +81,7 @@ final class StockCountService
                 'entity_id' => $count->id,
                 'payload' => [
                     'product_id' => $product->id,
+                    'purchase_id' => $purchase->id,
                     'counted_weight_kg' => $this->averageCost->formatWeight($countedMilli),
                     'system_weight_kg' => $this->averageCost->formatWeight($systemMilli),
                     'diff_kg' => $this->averageCost->formatWeight($diffMilli),
@@ -73,7 +92,7 @@ final class StockCountService
             if ($diffMilli !== 0 || $valueDelta !== 0) {
                 StockMovement::query()->create([
                     'product_id' => $product->id,
-                    'lot_id' => null,
+                    'lot_id' => $lot?->id,
                     'type' => 'count_adjust',
                     'weight_kg' => $this->averageCost->formatWeight($diffMilli),
                     'value_delta' => $valueDelta,
@@ -85,7 +104,9 @@ final class StockCountService
                 ]);
             }
 
-            return $count->fresh()->load('product');
+            $this->averageCost->updateLastUnitCost($product);
+
+            return $count->fresh()->load(['product', 'purchase']);
         });
     }
 
@@ -104,7 +125,7 @@ final class StockCountService
                 throw new LogicException('Hitung ulang ini sudah dibatalkan.');
             }
 
-            $newer = StockCount::query()->where('product_id', $count->product_id)->where('status', 'active')
+            $newer = StockCount::query()->where('purchase_id', $count->purchase_id)->where('product_id', $count->product_id)->where('status', 'active')
                 ->where(function ($query) use ($count): void {
                     $query->where('counted_at', '>', $count->counted_at)
                         ->orWhere(fn ($nested) => $nested->where('counted_at', $count->counted_at)->where('id', '>', $count->id));
@@ -117,7 +138,7 @@ final class StockCountService
             foreach ($movements as $movement) {
                 StockMovement::query()->create([
                     'product_id' => $movement->product_id,
-                    'lot_id' => null,
+                    'lot_id' => $movement->lot_id,
                     'type' => 'count_reversal',
                     'weight_kg' => $this->averageCost->formatWeight(-$this->averageCost->toMilli((string) $movement->weight_kg)),
                     'value_delta' => -(int) $movement->value_delta,
@@ -136,6 +157,12 @@ final class StockCountService
                 'cancelled_by_name' => $owner->name,
                 'cancel_reason' => $reason,
             ]);
+            $lot = StockLot::query()->where('purchase_id', $count->purchase_id)->where('product_id', $count->product_id)->first();
+            if ($lot !== null) {
+                $previousCount = StockCount::query()->where('purchase_id', $count->purchase_id)->where('product_id', $count->product_id)
+                    ->where('status', 'active')->orderByDesc('counted_at')->orderByDesc('id')->value('counted_weight_kg');
+                $lot->update(['weight_kg' => $previousCount ?? '0.000']);
+            }
             AuditLog::query()->create([
                 'user_id' => $ownerId,
                 'action' => 'stock_count.cancelled',
@@ -149,7 +176,14 @@ final class StockCountService
                 ],
             ]);
 
-            return $count->fresh()->load('product');
+            return $count->fresh()->load(['product', 'purchase']);
         });
+    }
+
+    private function lotBalanceMilli(int $lotId): int
+    {
+        $weight = StockMovement::query()->where('lot_id', $lotId)->sum('weight_kg');
+
+        return $this->averageCost->toMilli((string) $weight);
     }
 }

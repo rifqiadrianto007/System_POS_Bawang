@@ -77,7 +77,11 @@ it('allows an owner to create and view a purchase with rounded total cost', func
         ->assertJsonPath('data.gross_weight_kg', '100.000')
         ->assertJsonPath('data.price_per_kg', 17000)
         ->assertJsonPath('data.total_cost', 1700000)
-        ->assertJsonPath('data.sorting_status', 'unsorted');
+        ->assertJsonPath('data.sorted_weight_kg', '0.000')
+        ->assertJsonPath('data.remaining_weight_kg', '100.000')
+        ->assertJsonPath('data.sort_percentage', 0)
+        ->assertJsonPath('data.status_sortir', 'belum_disortir')
+        ->assertJsonPath('data.lots', []);
 
     $purchase = Purchase::query()->findOrFail($created->json('data.id'));
     expect($purchase->created_by)->toBe($owner->id)
