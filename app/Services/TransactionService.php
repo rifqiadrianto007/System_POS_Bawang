@@ -4,9 +4,7 @@ namespace App\Services;
 
 use App\Models\AuditLog;
 use App\Models\Product;
-use App\Models\Purchase;
 use App\Models\StockMovement;
-use App\Models\StockLot;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
 use Carbon\Carbon;
@@ -90,6 +88,10 @@ final class TransactionService
                 $this->applySale($transactionItem, $occurredAt, $cashierId);
             }
 
+            if ($transaction->items()->where('shortfall_kg', '>', 0)->exists()) {
+                $transaction->forceFill(['hpp_provisional' => true])->save();
+            }
+
             return $transaction->load($this->transactionItemResponseRelation($includeCosts));
         });
     }
@@ -157,84 +159,29 @@ final class TransactionService
         $coveredMilli = min($requiredMilli, max(0, $stockMilli));
         $shortfallMilli = $requiredMilli - $coveredMilli;
         $coveredCogs = $this->averageCost->cogs($coveredMilli, $stockMilli, $balance['stock_value']);
-        $reserveCost = $this->fallbackUnitCost($product);
+        $reserveCost = $product->last_unit_cost !== null
+            ? (int) $product->last_unit_cost
+            : ($balance['avg_cost'] ?? 0);
         $shortfallCogs = $this->averageCost->valueForWeight($shortfallMilli, $reserveCost);
         $cogs = $coveredCogs + $shortfallCogs;
-        $transactionItem->update(['cogs' => $cogs, 'shortfall_kg' => $this->averageCost->formatWeight($shortfallMilli)]);
-        $allocations = $this->allocateCoveredStock($product->id, $coveredMilli);
-        $allocatedCovered = array_sum(array_column($allocations, 'weight_milli'));
-        if ($allocatedCovered < $coveredMilli) {
-            $allocations[] = ['lot_id' => null, 'weight_milli' => $coveredMilli - $allocatedCovered];
-        }
-        if ($shortfallMilli > 0) {
-            $allocations[] = ['lot_id' => null, 'weight_milli' => $shortfallMilli, 'shortfall' => true];
-        }
-
-        $coveredValueAssigned = 0;
-        $coveredAllocations = array_values(array_filter($allocations, static fn (array $allocation): bool => ! ($allocation['shortfall'] ?? false)));
-        foreach ($allocations as $index => $allocation) {
-            $isShortfall = (bool) ($allocation['shortfall'] ?? false);
-            if ($isShortfall) {
-                $movementValue = $shortfallCogs;
-            } else {
-                $coveredIndex = array_search($allocation, $coveredAllocations, true);
-                $isLastCovered = $coveredIndex === array_key_last($coveredAllocations);
-                $movementValue = $isLastCovered
-                    ? $coveredCogs - $coveredValueAssigned
-                    : $this->averageCost->valueForWeight((int) $allocation['weight_milli'], $balance['avg_cost'] ?? 0);
-                $coveredValueAssigned += $movementValue;
-            }
-
-            StockMovement::query()->create([
-                'product_id' => $product->id, 'lot_id' => $allocation['lot_id'], 'type' => 'sale',
-                'weight_kg' => $this->averageCost->formatWeight(-(int) $allocation['weight_milli']), 'value_delta' => -$movementValue,
-                'ref_type' => TransactionItem::class, 'ref_id' => $transactionItem->id,
-                'occurred_at' => $occurredAt, 'created_by' => $createdBy,
-                'note' => $isShortfall ? 'Penjualan dengan HPP cadangan' : 'Penjualan',
-            ]);
-        }
+        $transactionItem->update([
+            'cogs' => $cogs,
+            'shortfall_kg' => $this->averageCost->formatWeight($shortfallMilli),
+            'shortfall_unit_cost' => $shortfallMilli > 0 ? $reserveCost : 0,
+        ]);
+        StockMovement::query()->create([
+            'product_id' => $product->id,
+            'lot_id' => null,
+            'type' => 'sale',
+            'weight_kg' => $this->averageCost->formatWeight(-$requiredMilli),
+            'value_delta' => -$cogs,
+            'ref_type' => TransactionItem::class,
+            'ref_id' => $transactionItem->id,
+            'occurred_at' => $occurredAt,
+            'created_by' => $createdBy,
+            'note' => $shortfallMilli > 0 ? 'Penjualan dengan HPP provisional' : 'Penjualan',
+        ]);
         $this->averageCost->updateLastUnitCost($product);
-    }
-
-    /** @return list<array{lot_id:int|null,weight_milli:int}> */
-    private function allocateCoveredStock(int $productId, int $weightMilli): array
-    {
-        if ($weightMilli <= 0) {
-            return [];
-        }
-        $lots = StockLot::query()->where('product_id', $productId)->orderBy('id')->get();
-        $remaining = $weightMilli;
-        $allocations = [];
-        foreach ($lots as $lot) {
-            $balance = (string) StockMovement::query()->where('lot_id', $lot->id)->sum('weight_kg');
-            $available = max(0, $this->averageCost->toMilli($balance));
-            $allocated = min($available, $remaining);
-            if ($allocated > 0) {
-                $allocations[] = ['lot_id' => (int) $lot->id, 'weight_milli' => $allocated];
-                $remaining -= $allocated;
-            }
-            if ($remaining === 0) {
-                break;
-            }
-        }
-
-        return $allocations;
-    }
-
-    private function fallbackUnitCost(Product $product): int
-    {
-        if ($product->last_unit_cost !== null) {
-            return (int) $product->last_unit_cost;
-        }
-        $row = Purchase::query()->where('jenis', $product->jenis)->selectRaw('SUM(total_cost) AS cost, SUM(gross_weight_kg) AS kg')->first();
-        $milli = $this->averageCost->toMilli((string) ($row->kg ?? '0'));
-        if ($milli <= 0) {
-            return 0;
-        }
-        $numerator = (int) $row->cost * 1000;
-        $quotient = intdiv($numerator, $milli);
-
-        return $quotient + (($numerator % $milli) * 2 >= $milli ? 1 : 0);
     }
 
     public function void(Transaction $transaction, int $ownerId, string $reason): Transaction
@@ -257,7 +204,8 @@ final class TransactionService
             ]);
 
             foreach ($transaction->items as $item) {
-                $sales = StockMovement::query()->where('type', 'sale')->where('ref_type', TransactionItem::class)->where('ref_id', $item->id)->get();
+                $sales = StockMovement::query()->whereIn('type', ['sale', 'sale_cogs_adjustment'])
+                    ->where('ref_type', TransactionItem::class)->where('ref_id', $item->id)->get();
                 foreach ($sales as $sale) {
                     StockMovement::query()->create([
                         'product_id' => $sale->product_id,

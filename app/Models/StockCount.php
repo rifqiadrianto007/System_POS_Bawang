@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class StockCount extends Model
 {
-    protected $fillable = ['product_id', 'purchase_id', 'counted_weight_kg', 'system_weight_kg', 'diff_kg', 'unit_cost_avg', 'loss_value', 'counted_at', 'counted_by', 'notes', 'status', 'cancelled_at', 'cancelled_by_name', 'cancel_reason'];
+    protected $fillable = ['product_id', 'purchase_id', 'counted_weight_kg', 'system_weight_kg', 'diff_kg', 'unit_cost_avg', 'loss_value', 'surplus_kg', 'surplus_value', 'counted_at', 'counted_by', 'notes', 'status', 'cancelled_at', 'cancelled_by_name', 'cancel_reason'];
 
     protected function casts(): array
     {

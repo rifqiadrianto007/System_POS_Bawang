@@ -8,7 +8,6 @@ use App\Models\Product;
 use App\Models\StockLot;
 use App\Models\StockMovement;
 use App\Models\Supplier;
-use App\Models\TransactionItem;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -38,7 +37,8 @@ final class PurchaseService
 
     public function list(array $filters): array
     {
-        $query = Purchase::query()->with(['supplier:id,name', 'stockLots.product'])->withSum('stockLots as counted_raw', 'weight_kg');
+        $query = Purchase::query()->with('supplier:id,name')
+            ->withSum('stockAdditions as added_raw', 'weight_kg');
         foreach (['from' => '>=', 'to' => '<='] as $key => $operator) {
             if (isset($filters[$key])) {
                 $query->where('purchased_at', $operator, $filters[$key]);
@@ -50,66 +50,60 @@ final class PurchaseService
 
         $all = (clone $query)->get();
         $summary = ['count' => $all->count(), 'gross_weight_kg' => $this->sumWeight($all->pluck('gross_weight_kg')->all()),
-            'display_kg' => '0.000', 'remaining_weight_kg' => '0.000', 'unsorted_count' => 0, 'sorted_count' => 0];
-        $display = 0;
+            'added_weight_kg' => '0.000', 'remaining_weight_kg' => '0.000', 'unlocked_count' => 0, 'locked_count' => 0];
+        $addedTotal = 0;
         $remaining = 0;
         foreach ($all as $purchase) {
             $gross = $this->averageCost->toMilli((string) $purchase->gross_weight_kg);
-            $sorted = $this->averageCost->toMilli((string) ($purchase->counted_raw ?? '0'));
-            $display += min($gross, $sorted);
-            $remaining += max(0, $gross - $sorted);
-            $summary[$sorted > 0 ? 'sorted_count' : 'unsorted_count']++;
+            $sorted = $this->averageCost->toMilli((string) ($purchase->added_raw ?? '0'));
+            $addedTotal += $sorted;
+            if ($purchase->sorted_finished_at === null) {
+                $remaining += max(0, $gross - $sorted);
+                $summary['unlocked_count']++;
+            } else {
+                $summary['locked_count']++;
+            }
         }
-        $summary['display_kg'] = $this->averageCost->formatWeight($display);
+        $summary['added_weight_kg'] = $this->averageCost->formatWeight($addedTotal);
         $summary['remaining_weight_kg'] = $this->averageCost->formatWeight($remaining);
 
-        if (isset($filters['status_sortir'])) {
-            $ids = $all->filter(fn (Purchase $purchase): bool => $this->statusFor($purchase) === $filters['status_sortir'])->modelKeys();
+        if (isset($filters['status_batch'])) {
+            $isLocked = $filters['status_batch'] === 'selesai_disortir';
+            $ids = $all->filter(fn (Purchase $purchase): bool => ($purchase->sorted_finished_at !== null) === $isLocked)->modelKeys();
             $query->whereIn('id', $ids);
         }
-        $includeLots = ($filters['include'] ?? null) === 'lots';
         $purchases = $query->orderByDesc('purchased_at')->orderByDesc('id')
             ->paginate(min(50, (int) ($filters['per_page'] ?? 20)), ['*'], 'page', (int) ($filters['page'] ?? 1));
-        $purchases->getCollection()->transform(function (Purchase $purchase) use ($includeLots): Purchase {
-            $purchase = $this->present($purchase);
-            $purchase->setAttribute('include_lots', $includeLots);
-
-            return $purchase;
-        });
+        $purchases->getCollection()->transform(fn (Purchase $purchase): Purchase => $this->present($purchase));
 
         return ['purchases' => $purchases, 'summary' => $summary];
     }
 
     public function present(Purchase $purchase): Purchase
     {
-        $purchase->loadMissing(['supplier:id,name', 'stockLots.product']);
+        $purchase->loadMissing(['supplier:id,name', 'stockAdditions']);
         $gross = $this->averageCost->toMilli((string) ($purchase->gross_weight_kg ?? '0'));
         $sorted = 0;
-        foreach ($purchase->stockLots as $lot) {
-            $sorted += $this->averageCost->toMilli((string) ($lot->weight_kg ?? '0'));
+        if (array_key_exists('added_raw', $purchase->getAttributes())) {
+            $sorted = $this->averageCost->toMilli((string) ($purchase->added_raw ?? '0'));
+        } else {
+            foreach ($purchase->stockAdditions as $addition) {
+                $sorted += $this->averageCost->toMilli((string) $addition->weight_kg);
+            }
         }
-        $remaining = max(0, $gross - $sorted);
-        $percentage = $gross > 0 ? intdiv(min($gross, $sorted) * 100 * 2 + $gross, 2 * $gross) : 0;
-        $lots = $purchase->stockLots->map(fn (StockLot $lot) => [
-            'id' => (int) $lot->id,
-            'purchase_id' => (int) $lot->purchase_id,
-            'product_id' => (int) $lot->product_id,
-            'product_name' => $lot->product?->name ?? '',
-            'clean_weight_kg' => (string) ($lot->weight_kg ?? '0.000'),
-        ])->values()->all();
-
-        $purchase->setAttribute('sorted_weight_kg', $this->averageCost->formatWeight(min($gross, $sorted)));
+        $remaining = $purchase->sorted_finished_at === null ? max(0, $gross - $sorted) : 0;
+        $purchase->setAttribute('added_weight_kg', $this->averageCost->formatWeight($sorted));
         $purchase->setAttribute('remaining_weight_kg', $this->averageCost->formatWeight($remaining));
-        $purchase->setAttribute('sort_percentage', $percentage);
-        $purchase->setAttribute('status_sortir', $sorted > 0 ? 'tersortir' : 'belum_disortir');
-        $sold = $this->soldForPurchase($purchase);
-        $purchase->setAttribute('sorted_kg', $this->averageCost->formatWeight(min($gross, $sorted)));
-        $purchase->setAttribute('unsorted_kg', $this->averageCost->formatWeight($remaining));
-        $purchase->setAttribute('sold_kg', $this->averageCost->formatWeight($sold));
-        $purchase->setAttribute('susut_kg', $this->averageCost->formatWeight(max(0, $gross - $sold)));
-        $purchase->setAttribute('can_edit', $purchase->stockLots->isEmpty());
-        $purchase->setAttribute('can_delete', $purchase->stockLots->isEmpty());
-        $purchase->setAttribute('lots', $lots);
+        $purchase->setAttribute('status_batch', $purchase->sorted_finished_at !== null ? 'selesai_disortir' : 'belum_selesai');
+        $hasStockHistory = $purchase->stockLots()->exists()
+            || DB::table('stock_additions')->where('purchase_id', $purchase->id)->exists();
+        $purchase->setAttribute('can_edit', ! $hasStockHistory && $purchase->sorted_finished_at === null);
+        $purchase->setAttribute('can_delete', ! $hasStockHistory && $purchase->sorted_finished_at === null);
+        $purchase->setAttribute('is_locked', $purchase->sorted_finished_at !== null);
+        $purchase->setAttribute('needs_stock_reconciliation', (bool) $purchase->needs_stock_reconciliation);
+        $purchase->setAttribute('cleaning_shrink_kg', (string) ($purchase->cleaning_shrink_kg ?? '0.000'));
+        $purchase->setAttribute('cleaning_loss_value', (int) ($purchase->cleaning_loss_value ?? 0));
+        $purchase->setAttribute('is_locked', $purchase->sorted_finished_at !== null);
 
         return $purchase;
     }
@@ -117,7 +111,7 @@ final class PurchaseService
     /** @param Collection<int,Purchase> $purchases @return Collection<int,Purchase> */
     public function deriveMetrics(Collection $purchases): Collection
     {
-        $purchases->loadMissing(['supplier:id,name', 'stockLots.product']);
+        $purchases->loadMissing(['supplier:id,name']);
 
         return $purchases->map(fn (Purchase $purchase): Purchase => $this->present($purchase));
     }
@@ -126,7 +120,12 @@ final class PurchaseService
     {
         return DB::transaction(function () use ($purchase, $attributes, $ownerId): Purchase {
             $purchase = Purchase::query()->with('stockLots')->lockForUpdate()->findOrFail($purchase->id);
-            if ($purchase->stockLots->isNotEmpty() && array_diff(array_keys($attributes), ['notes', 'supplier_id']) !== []) {
+            if ($purchase->sorted_finished_at !== null) {
+                throw new LogicException('Batch yang sudah selesai disortir tidak dapat diubah.');
+            }
+            $hasStockHistory = $purchase->stockLots->isNotEmpty()
+                || DB::table('stock_additions')->where('purchase_id', $purchase->id)->exists();
+            if ($hasStockHistory && array_diff(array_keys($attributes), ['notes', 'supplier_id']) !== []) {
                 throw new LogicException('Kulak sudah memiliki data hitung ulang; hanya catatan dan pemasok yang dapat diubah.');
             }
             $before = $purchase->only(array_keys($attributes));
@@ -157,40 +156,62 @@ final class PurchaseService
     {
         DB::transaction(function () use ($purchase, $ownerId): void {
             $p = Purchase::query()->with('stockLots')->lockForUpdate()->findOrFail($purchase->id);
-            if ($p->stockLots->isNotEmpty()) {
+            if ($p->stockLots->isNotEmpty() || DB::table('stock_additions')->where('purchase_id', $p->id)->exists()) {
                 throw new LogicException('Kulak yang sudah memiliki hitung ulang tidak dapat dihapus.');
+            }
+            if ($p->sorted_finished_at !== null) {
+                throw new LogicException('Batch yang sudah selesai disortir tidak dapat dihapus.');
             }
             $this->audit('purchase.deleted', $p, $ownerId, $p->only(['code', 'supplier_id', 'purchased_at', 'gross_weight_kg', 'jenis', 'total_cost']));
             $p->delete();
         });
     }
 
-    private function statusFor(Purchase $purchase): string
+    public function finishSorting(Purchase $purchase, int $ownerId): Purchase
     {
-        return $this->averageCost->toMilli((string) ($purchase->counted_raw ?? '0')) > 0 ? 'tersortir' : 'belum_disortir';
-    }
-
-    private function soldForPurchase(Purchase $purchase): int
-    {
-        $productIds = $purchase->stockLots->pluck('product_id')->unique();
-        if ($productIds->isEmpty()) {
-            return 0;
-        }
-        $soldByProduct = TransactionItem::query()->whereHas('transaction', fn ($query) => $query->where('status', 'completed'))
-            ->whereIn('product_id', $productIds)->select('product_id')->selectRaw('SUM(weight_kg) AS kg')->groupBy('product_id')->pluck('kg', 'product_id');
-        $lots = StockLot::query()->whereIn('product_id', $productIds)->orderBy('product_id')->orderBy('sorted_at')->orderBy('id')->get(['purchase_id', 'product_id', 'weight_kg']);
-        $soldByPurchase = [];
-        foreach ($lots->groupBy('product_id') as $productId => $productLots) {
-            $remainingSold = $this->averageCost->toMilli((string) ($soldByProduct[$productId] ?? '0'));
-            foreach ($productLots as $lot) {
-                $weight = $this->averageCost->toMilli((string) $lot->weight_kg);
-                $sold = min($weight, max(0, $remainingSold));
-                $soldByPurchase[$lot->purchase_id] = ($soldByPurchase[$lot->purchase_id] ?? 0) + $sold;
-                $remainingSold -= $sold;
+        return DB::transaction(function () use ($purchase, $ownerId): Purchase {
+            $purchase = Purchase::query()->lockForUpdate()->findOrFail($purchase->id);
+            if ($purchase->sorted_finished_at !== null) {
+                throw new LogicException('Batch ini sudah selesai disortir dan tidak dapat dibatalkan.');
             }
-        }
+            $added = (string) DB::table('stock_additions')->where('purchase_id', $purchase->id)->sum('weight_kg');
+            $grossMilli = $this->averageCost->toMilli((string) $purchase->gross_weight_kg);
+            $addedMilli = $this->averageCost->toMilli($added);
+            if ($purchase->needs_stock_reconciliation && $addedMilli === 0) {
+                throw new LogicException('Riwayat stok batch lama perlu direkonsiliasi sebelum batch dapat diselesaikan.');
+            }
+            if ($addedMilli > $grossMilli) {
+                throw new LogicException('Total berat Tambah melebihi berat kulak batch.');
+            }
 
-        return (int) ($soldByPurchase[$purchase->id] ?? 0);
+            $remainingMilli = $grossMilli - $addedMilli;
+            $lossValue = $this->averageCost->valueForWeight($remainingMilli, (int) $purchase->price_per_kg);
+            $finishedAt = now();
+            $wasNeedsReconciliation = (bool) $purchase->needs_stock_reconciliation;
+            $purchase->forceFill([
+                'sorted_finished_at' => $finishedAt,
+                'sorted_finished_by' => $ownerId,
+                'cleaning_shrink_kg' => $this->averageCost->formatWeight($remainingMilli),
+                'cleaning_loss_value' => $lossValue,
+                'needs_stock_reconciliation' => false,
+            ])->save();
+
+            AuditLog::query()->create([
+                'user_id' => $ownerId,
+                'action' => 'purchase.sorting_finished',
+                'entity_type' => Purchase::class,
+                'entity_id' => $purchase->id,
+                'payload' => [
+                    'purchase_id' => $purchase->id,
+                    'cleaning_shrink_kg' => $this->averageCost->formatWeight($remainingMilli),
+                    'cleaning_loss_value' => $lossValue,
+                    'finished_at' => $finishedAt->toIso8601String(),
+                    'reconciled_legacy_history' => $wasNeedsReconciliation,
+                ],
+            ]);
+
+            return $this->present($purchase->fresh());
+        });
     }
 
     private function sumWeight(array $weights): string

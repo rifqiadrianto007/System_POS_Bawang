@@ -41,17 +41,23 @@ final class PricingService
                 throw new InvalidArgumentException('Produk tidak ditemukan.');
             }
 
-            $weights[$productId] = ($weights[$productId] ?? 0) + $weightMilli;
+            $weights[] = ['product_id' => $productId, 'weight_milli' => $weightMilli];
         }
 
         $quotedItems = [];
         $subtotal = 0;
 
-        foreach ($weights as $productId => $weightMilli) {
+        foreach ($weights as $line) {
+            $productId = $line['product_id'];
+            $weightMilli = $line['weight_milli'];
             $product = $products->get($productId);
             $tier = $this->selectTier($customerCategory, $weightMilli);
             $price = $this->priceForTier($product, $tier);
-            $lineTotal = $this->roundToHundred($weightMilli, $price);
+            if ($customerCategory === 'ecer' && $weightMilli < 1000) {
+                $lineTotal = intdiv(($weightMilli * $price) + 500_000 - 1, 500_000) * 500;
+            } else {
+                $lineTotal = $this->roundToHundred($weightMilli, $price);
+            }
 
             $quotedItems[] = [
                 'product_id' => $product->id,

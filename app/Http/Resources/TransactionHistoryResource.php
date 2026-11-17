@@ -21,6 +21,7 @@ class TransactionHistoryResource extends JsonResource
             'total' => (int) $this->total,
             'payment_method' => $this->payment_method,
             'status' => $this->status,
+            'hpp_provisional' => (bool) $this->hpp_provisional,
             'customer_name' => $this->customer_name,
         ];
 

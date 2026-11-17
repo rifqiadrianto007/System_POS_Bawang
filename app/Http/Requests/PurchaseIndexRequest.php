@@ -21,8 +21,7 @@ class PurchaseIndexRequest extends FormRequest
             'from' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'to' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'jenis' => ['sometimes', 'nullable', 'in:merah,putih'],
-            'status_sortir' => ['sometimes', 'nullable', 'in:belum_disortir,tersortir'],
-            'include' => ['sometimes', 'nullable', 'in:lots'],
+            'status_batch' => ['sometimes', 'nullable', 'in:belum_selesai,selesai_disortir'],
         ];
     }
 
