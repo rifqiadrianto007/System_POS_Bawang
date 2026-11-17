@@ -8,6 +8,7 @@ use App\Models\Supplier;
 use App\Models\User;
 use App\Services\PurchaseService;
 use App\Services\StockCountService;
+use App\Services\StockAdditionService;
 use App\Services\TransactionService;
 use Illuminate\Support\Facades\Hash;
 
@@ -28,10 +29,13 @@ final class DemoData
 
         $service = app(PurchaseService::class);
         $countService = app(StockCountService::class);
+        $additionService = app(StockAdditionService::class);
         $attributes = ['supplier_id' => $supplier->id, 'purchased_at' => '2026-10-27', 'jenis' => 'merah', 'gross_weight_kg' => '100.000', 'price_per_kg' => 20000, 'notes' => 'Kulak fixture'];
         $closed = $service->create($attributes, $owner->id);
-        $countOld = $countService->create(['purchase_id' => $closed->id, 'product_id' => $redA->id, 'counted_weight_kg' => '30.000', 'counted_at' => '2026-10-27 09:00:00', 'notes' => 'Grade A'], $owner->id);
-        $countService->create(['purchase_id' => $closed->id, 'product_id' => $redB->id, 'counted_weight_kg' => '25.000', 'counted_at' => '2026-10-27 09:01:00', 'notes' => 'Grade B'], $owner->id);
+        $additionService->create(['batch_id' => $closed->id, 'product_id' => $redA->id, 'weight_kg' => '30.000'], $owner->id);
+        $additionService->create(['batch_id' => $closed->id, 'product_id' => $redB->id, 'weight_kg' => '25.000'], $owner->id);
+        $countOld = $countService->create(['product_id' => $redA->id, 'counted_weight_kg' => '30.000', 'counted_at' => '2026-10-27 10:01:00', 'notes' => 'Grade A'], $owner->id);
+        $countService->create(['product_id' => $redB->id, 'counted_weight_kg' => '25.000', 'counted_at' => '2026-10-27 10:02:00', 'notes' => 'Grade B'], $owner->id);
 
         $transaction = app(TransactionService::class)->create([
             'client_uuid' => 'd1000000-0000-4000-8000-000000000001', 'customer_category' => 'ecer', 'customer_name' => 'Pelanggan Contoh',
@@ -39,8 +43,8 @@ final class DemoData
             'amount_paid' => 26000, 'occurred_at' => '2026-10-27 10:00:00',
         ], $cashier->id);
 
-        $countLatest = $countService->create(['purchase_id' => $closed->id, 'product_id' => $redA->id, 'counted_weight_kg' => '30.000', 'counted_at' => '2026-10-27 10:10:00', 'notes' => 'Contoh terbaru'], $owner->id);
-        $countCancelled = $countService->create(['purchase_id' => $closed->id, 'product_id' => $redA->id, 'counted_weight_kg' => '30.000', 'counted_at' => '2026-10-27 10:15:00', 'notes' => 'Contoh hitung batal'], $owner->id);
+        $countLatest = $countService->create(['product_id' => $redA->id, 'counted_weight_kg' => '30.000', 'counted_at' => '2026-10-27 10:10:00', 'notes' => 'Contoh terbaru'], $owner->id);
+        $countCancelled = $countService->create(['product_id' => $redA->id, 'counted_weight_kg' => '30.000', 'counted_at' => '2026-10-27 10:15:00', 'notes' => 'Contoh hitung batal'], $owner->id);
         $countCancelled = $countService->cancel($countCancelled, 'Pembatalan fixture terbaru', $owner->id);
 
         Expense::query()->create(['name' => 'Plastik kemasan', 'category' => 'lainnya', 'amount' => 50000, 'spent_at' => '2026-10-27', 'notes' => 'Contoh fixture', 'created_by' => $owner->id]);
