@@ -8,11 +8,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Transaction extends Model
 {
-    protected $fillable = ['invoice_no', 'client_uuid', 'cashier_id', 'customer_category', 'customer_name', 'subtotal', 'discount', 'total', 'amount_paid', 'payment_method', 'status', 'occurred_at', 'void_reason', 'voided_by', 'voided_at'];
+    protected $fillable = ['invoice_no', 'client_uuid', 'cashier_id', 'customer_category', 'customer_name', 'subtotal', 'discount', 'total', 'amount_paid', 'hpp_provisional', 'payment_method', 'status', 'occurred_at', 'void_reason', 'voided_by', 'voided_at'];
 
     protected function casts(): array
     {
-        return ['occurred_at' => 'datetime', 'voided_at' => 'datetime'];
+        return ['occurred_at' => 'datetime', 'voided_at' => 'datetime', 'hpp_provisional' => 'boolean'];
     }
 
     public function cashier(): BelongsTo

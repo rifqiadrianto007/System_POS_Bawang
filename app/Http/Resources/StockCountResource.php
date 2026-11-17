@@ -19,6 +19,8 @@ class StockCountResource extends JsonResource
             'diff_kg' => $this->formatWeight($this->diff_kg),
             'unit_cost_avg' => $this->unit_cost_avg,
             'loss_value' => $this->loss_value,
+            'surplus_kg' => $this->formatWeight($this->surplus_kg ?? '0'),
+            'surplus_value' => (int) ($this->surplus_value ?? 0),
             'counted_at' => $this->counted_at?->setTimezone('Asia/Jakarta')->toIso8601String(),
             'counted_by' => $this->counted_by,
             'notes' => $this->notes,

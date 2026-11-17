@@ -349,8 +349,8 @@ it('returns U-26 payment fields to cashiers without exposing cost fields', funct
         ->assertJsonMissingPath('data.0.cogs')->assertJsonMissingPath('data.0.items.0.cogs')
         ->assertJsonMissingPath('data.0.hpp')->assertJsonMissingPath('data.0.margin');
     expect(array_keys($history->json('data.0')))->toBe([
-        'id', 'invoice_no', 'occurred_at', 'cashier_name', 'items_count', 'total_weight_kg', 'subtotal', 'discount', 'total', 'payment_method', 'status', 'customer_name',
-    ]); // R4 H-25 replaces the former payment fields in list rows; detail and receipt assertions below are unchanged.
+        'id', 'invoice_no', 'occurred_at', 'cashier_name', 'items_count', 'total_weight_kg', 'subtotal', 'discount', 'total', 'payment_method', 'status', 'hpp_provisional', 'customer_name',
+    ]); // The list includes provisional state while keeping payment and cost fields hidden.
     $this->withToken($token)->getJson("/api/v1/transactions/{$transactionId}")
         ->assertOk()->assertJsonPath('data.amount_paid', 100000)->assertJsonPath('data.change', 25000)
         ->assertJsonMissingPath('data.cogs')->assertJsonMissingPath('data.items.0.cogs')

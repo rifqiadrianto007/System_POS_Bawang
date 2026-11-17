@@ -48,8 +48,10 @@ class ProductController extends Controller
         unset($validated['price_3kg']);
         $pricesChanged = collect(['price_retail', 'price_5kg'])
             ->contains(fn (string $field): bool => (int) $product->{$field} !== (int) $validated[$field]);
+        $jenisChanged = $product->jenis !== $validated['jenis'];
+        $beforeJenis = $product->jenis;
 
-        $product = DB::transaction(function () use ($request, $product, $validated, $pricesChanged): Product {
+        $product = DB::transaction(function () use ($request, $product, $validated, $pricesChanged, $jenisChanged, $beforeJenis): Product {
             $product->update($validated);
 
             if ($pricesChanged) {
@@ -73,7 +75,14 @@ class ProductController extends Controller
                 ]);
             }
 
-            return $product;
+            if ($jenisChanged) {
+                $this->recordAudit('product.type_changed', $product, $request->user()->id, [
+                    'before' => ['jenis' => $beforeJenis],
+                    'after' => ['jenis' => $product->jenis],
+                ]);
+            }
+
+            return $product->fresh();
         });
 
         return new ProductResource($product);

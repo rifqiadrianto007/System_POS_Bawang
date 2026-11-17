@@ -243,6 +243,29 @@
           }
         },
         {
+          "name": "Product Batch Addition History (Owner)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/products/{{product_id}}/batches",
+              "host": [
+                "{{base_url}}{{api_prefix}}"
+              ],
+              "path": [
+                "products",
+                "{{product_id}}",
+                "batches"
+              ]
+            }
+          }
+        },
+        {
           "name": "Create Product (Owner)",
           "request": {
             "method": "POST",
@@ -425,6 +448,26 @@
               "listen": "test"
             }
           ]
+        },
+        {
+          "name": "Check Cart Stock",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    { \"product_id\": {{product_id}}, \"weight_kg\": \"0.500\" }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/transactions/check-cart",
+              "host": ["{{base_url}}{{api_prefix}}"],
+              "path": ["transactions", "check-cart"]
+            }
+          }
         },
         {
           "name": "Create Transaction",
@@ -1985,6 +2028,38 @@
           ]
         },
         {
+          "name": "Add Stock From Batch",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"batch_id\": {{purchase_id}},\n  \"product_id\": {{product_id}},\n  \"weight_kg\": \"10.000\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/stock-additions",
+              "host": ["{{base_url}}{{api_prefix}}"],
+              "path": ["stock-additions"]
+            }
+          }
+        },
+        {
+          "name": "Finish Sorting Purchase Batch",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}{{api_prefix}}/purchases/{{purchase_id}}/finish-sorting",
+              "host": ["{{base_url}}{{api_prefix}}"],
+              "path": ["purchases", "{{purchase_id}}", "finish-sorting"]
+            }
+          }
+        },
+        {
           "name": "Get Purchase",
           "request": {
             "method": "GET",
@@ -2120,7 +2195,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"purchase_id\": {{purchase_id}},\n  \"product_id\": {{product_id}},\n  \"counted_weight_kg\": \"18.500\",\n  \"counted_at\": \"2026-11-11T10:00:00+07:00\",\n  \"notes\": \"Hitung display pagi\"\n}",
+              "raw": "{\n  \"product_id\": {{product_id}},\n  \"counted_weight_kg\": \"18.500\",\n  \"counted_at\": \"2026-11-11T10:00:00+07:00\",\n  \"notes\": \"Hitung display pagi\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

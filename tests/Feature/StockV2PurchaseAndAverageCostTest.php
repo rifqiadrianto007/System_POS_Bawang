@@ -29,9 +29,8 @@ it('AV-01 calculates weighted average inventory value and cogs from purchase and
         'supplier_id' => $supplier->id, 'purchased_at' => now('Asia/Jakarta')->toDateString(), 'jenis' => 'merah',
         'gross_weight_kg' => '30.000', 'price_per_kg' => 20500,
     ])->assertCreated()->json('data');
-    $this->withToken($token)->postJson('/api/v1/stock-counts', [
-        'purchase_id' => $purchase['id'], 'product_id' => $product->id, 'counted_weight_kg' => '30.000',
-        'counted_at' => now('Asia/Jakarta')->toIso8601String(),
+    $this->withToken($token)->postJson('/api/v1/stock-additions', [
+        'batch_id' => $purchase['id'], 'product_id' => $product->id, 'weight_kg' => '30.000',
     ])->assertCreated();
     $sale = $this->withToken($token)->postJson('/api/v1/transactions', [
         'client_uuid' => '30000000-0000-4000-8000-000000000002', 'customer_category' => 'ecer',

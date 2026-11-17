@@ -64,7 +64,7 @@ function exampleRouteBody(string $method, string $path, array $fixture): array
             'notes' => 'Contoh perubahan',
         ],
         $path === 'stock-counts' && $method === 'POST' => [
-            'purchase_id' => $fixture['primary_purchase']->id, 'product_id' => $product->id,
+            'product_id' => $product->id,
             'counted_weight_kg' => '0.000', 'counted_at' => '2026-10-27 10:00:00', 'notes' => 'Contoh hitung ulang',
         ],
         $path === 'expenses' && in_array($method, ['POST', 'PUT'], true) => [
@@ -199,21 +199,21 @@ function namedExampleScenarios(array $fixture): array
         'DELETE__expenses_expense__deleted__404.json' => ['method'=>'DELETE','path'=>"/api/v1/expenses/{$expense->id}",'status'=>404],
         'GET__expenses_suggestions__suggestions.json' => ['method'=>'GET','path'=>'/api/v1/expenses/suggestions','status'=>200],
         'GET__purchases__list_summary.json' => ['method'=>'GET','path'=>'/api/v1/purchases','status'=>200],
-        'GET__purchases__sorting_filter.json' => ['method'=>'GET','path'=>'/api/v1/purchases','query'=>['status_sortir'=>'tersortir'],'status'=>200],
+        'GET__purchases__sorting_filter.json' => ['method'=>'GET','path'=>'/api/v1/purchases','query'=>['status_batch'=>'belum_selesai'],'status'=>200],
         'GET__purchases__jenis_filter.json' => ['method'=>'GET','path'=>'/api/v1/purchases','query'=>['jenis'=>'merah'],'status'=>200],
-        'GET__purchases__include_lots.json' => ['method'=>'GET','path'=>'/api/v1/purchases','query'=>['include'=>'lots'],'status'=>200],
+        'GET__products_product_batches.json' => ['method'=>'GET','path'=>"/api/v1/products/{$fixture['product']->id}/batches",'status'=>200],
         'POST__purchases__batch_100kg__201.json' => ['method'=>'POST','path'=>'/api/v1/purchases','body'=>[
             'supplier_id'=>$fixture['supplier']->id,'purchased_at'=>'2026-10-27','jenis'=>'merah','gross_weight_kg'=>'100.000','price_per_kg'=>21000,'notes'=>'Contoh batch 100 kg',
         ],'status'=>201],
         'GET__purchases_purchase__detail.json' => ['method'=>'GET','path'=>$purchasePath($batch->id),'status'=>200],
         'GET__purchases_purchase__batch_100_55.json' => ['method'=>'GET','path'=>$purchasePath($batch->id),'status'=>200],
         'POST__stock-counts__batch_100kg_red_a_30kg__201.json' => ['method'=>'POST','path'=>'/api/v1/stock-counts','body'=>[
-            'purchase_id'=>$batch->id,'product_id'=>$countProduct->id,'counted_weight_kg'=>'30.000','counted_at'=>'2026-10-27 10:32:00','notes'=>'Hasil timbang batch A',
+            'product_id'=>$countProduct->id,'counted_weight_kg'=>'30.000','counted_at'=>'2026-10-27 10:32:00','notes'=>'Hasil timbang batch A',
         ],'status'=>201],
         'POST__stock-counts__batch_100kg_red_b_25kg__201.json' => ['method'=>'POST','path'=>'/api/v1/stock-counts','body'=>[
-            'purchase_id'=>$batch->id,'product_id'=>$fixture['products'][1]->id,'counted_weight_kg'=>'25.000','counted_at'=>'2026-10-27 10:33:00','notes'=>'Hasil timbang batch B',
+            'product_id'=>$fixture['products'][1]->id,'counted_weight_kg'=>'25.000','counted_at'=>'2026-10-27 10:33:00','notes'=>'Hasil timbang batch B',
         ],'status'=>201],
-        'POST__stock-counts__wrong_jenis__422.json' => ['method'=>'POST','path'=>'/api/v1/stock-counts','body'=>['purchase_id'=>$batch->id,'product_id'=>$fixture['products'][3]->id,'counted_weight_kg'=>'1.000','counted_at'=>'2026-10-27 10:31:00'],'status'=>422],
+        'POST__stock-counts__product_count_without_batch__201.json' => ['method'=>'POST','path'=>'/api/v1/stock-counts','body'=>['product_id'=>$fixture['products'][3]->id,'counted_weight_kg'=>'1.000','counted_at'=>'2026-10-27 10:31:00'],'status'=>201],
         'PUT__purchases_purchase__batch_has_stock__409.json' => ['method'=>'PUT','path'=>$purchasePath($batch->id),'body'=>['gross_weight_kg'=>'99.000'],'status'=>409],
         'DELETE__purchases_purchase__batch_has_stock__409.json' => ['method'=>'DELETE','path'=>$purchasePath($batch->id),'status'=>409],
         'GET__stock__shortfall.json' => ['method'=>'GET','path'=>'/api/v1/stock','status'=>200],
@@ -282,7 +282,7 @@ it('CX-01 through CX-05 generates deterministic sanitized examples for every v1 
     expect(array_filter(array_keys($first), static fn (string $name): bool => str_contains($name, 'finalize')))->toBeEmpty();
     expect($first)->toHaveKeys(array_keys(namedExampleScenarios($fixture)));
     expect($first['GET__purchases_purchase__batch_100_55.json']['response']['body']['data'])
-        ->toMatchArray(['gross_weight_kg' => '100.000', 'sorted_weight_kg' => '55.000', 'remaining_weight_kg' => '45.000', 'sort_percentage' => 55]);
+        ->toMatchArray(['gross_weight_kg' => '100.000', 'added_weight_kg' => '55.000', 'remaining_weight_kg' => '45.000', 'is_locked' => false]);
 
     $directory = base_path('docs/api-examples');
     if (env('WRITE_EXAMPLES') === '1') {
@@ -309,5 +309,5 @@ it('CX-01 through CX-05 generates deterministic sanitized examples for every v1 
     expect($finance)->toHaveKeys(['cleaning_loss_value', 'net_profit', 'daily'])
         ->and($finance['daily'][0])->toHaveKeys(['cleaning_loss_value', 'net_profit']);
     $stock = json_decode(file_get_contents($directory.'/GET__reports_stock.json'), true, flags: JSON_THROW_ON_ERROR)['response']['body']['data'];
-    expect($stock)->toHaveKeys(['from', 'to', 'incoming_gross_kg', 'sorted_kg', 'warehouse_kg', 'display_kg', 'shortfall_kg', 'sold_kg', 'display_shrink_kg', 'display_shrink_value', 'cleaning_shrink_kg', 'cleaning_loss_value', 'susut_kg', 'avg_purchase_price_per_kg', 'susut_value_estimate', 'stock_value', 'products']);
+    expect($stock)->toHaveKeys(['from', 'to', 'incoming_gross_kg', 'pending_gross_kg', 'clean_kg', 'cleaning_shrink_kg', 'cleaning_shrink_value', 'sold_kg', 'display_shrink_kg', 'display_shrink_value', 'shrink_kg', 'shrink_value', 'stock_ready_kg', 'display_value', 'unsorted_value', 'stock_value', 'products']);
 });

@@ -22,6 +22,7 @@ class TransactionReceiptResource extends JsonResource
             'change' => $this->amount_paid === null ? null : $this->amount_paid - $this->total,
             'payment_method' => $this->payment_method,
             'status' => $this->status,
+            'hpp_provisional' => (bool) $this->hpp_provisional,
         ];
 
         if ($request->user()?->role === 'owner') {

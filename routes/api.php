@@ -7,6 +7,7 @@ use App\Http\Controllers\ProductController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\StockController;
+use App\Http\Controllers\StockAdditionController;
 use App\Http\Controllers\StockCountController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\TransactionController;
@@ -23,6 +24,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/owner/ping', fn () => response()->json(['message' => 'Akses owner berhasil.']))
             ->middleware('role:owner');
         Route::get('/products', [ProductController::class, 'index']);
+        Route::get('/products/{product}/batches', [StockController::class, 'productBatches'])->middleware('role:owner');
         Route::post('/products', [ProductController::class, 'store'])->middleware('role:owner');
         Route::put('/products/{product}', [ProductController::class, 'update'])->middleware('role:owner');
         Route::patch('/products/{product}/active', [ProductController::class, 'updateStatus'])->middleware('role:owner');
@@ -35,10 +37,12 @@ Route::prefix('v1')->group(function (): void {
             Route::get('/purchases', [PurchaseController::class, 'index']);
             Route::post('/purchases', [PurchaseController::class, 'store']);
             Route::put('/purchases/{purchase}', [PurchaseController::class, 'update']);
+            Route::post('/purchases/{purchase}/finish-sorting', [PurchaseController::class, 'finishSorting']);
             Route::delete('/purchases/{purchase}', [PurchaseController::class, 'destroy']);
             Route::get('/purchases/{purchase}', [PurchaseController::class, 'show']);
             Route::get('/stock', StockController::class);
             Route::post('/stock-counts', [StockCountController::class, 'store']);
+            Route::post('/stock-additions', [StockAdditionController::class, 'store']);
             Route::delete('/stock-counts/{stockCount}', [StockCountController::class, 'destroy'])->middleware('role:owner');
             Route::get('/stock-counts', [StockCountController::class, 'index']);
             Route::get('/expenses', [ExpenseController::class, 'index']);
@@ -54,6 +58,7 @@ Route::prefix('v1')->group(function (): void {
             Route::get('/audit-logs', AuditLogController::class);
         });
         Route::post('/transactions/quote', TransactionQuoteController::class);
+        Route::post('/transactions/check-cart', [TransactionQuoteController::class, 'checkStock']);
         Route::post('/transactions', [TransactionController::class, 'store']);
         Route::get('/transactions/{transaction}', [TransactionController::class, 'show']);
         Route::post('/transactions/{transaction}/void', [TransactionController::class, 'void'])

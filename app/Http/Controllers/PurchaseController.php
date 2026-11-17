@@ -43,6 +43,15 @@ class PurchaseController extends Controller
         return new PurchaseResource($purchaseService->present($purchase));
     }
 
+    public function finishSorting(Purchase $purchase, PurchaseService $purchaseService): PurchaseResource|JsonResponse
+    {
+        try {
+            return new PurchaseResource($purchaseService->finishSorting($purchase, request()->user()->id));
+        } catch (LogicException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 409);
+        }
+    }
+
     public function update(
         UpdatePurchaseRequest $request,
         Purchase $purchase,

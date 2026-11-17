@@ -133,9 +133,9 @@ it('keeps transaction history rows to the documented cashier list fields', funct
         ->assertJsonMissingPath('data.0.change')
         ->assertJsonMissingPath('data.0.cogs');
 
-    // R4 H-25 defines an exact list row shape; payment fields remain on detail and receipt.
+    // Cashier history includes the provisional status flag but no payment or cost fields.
     expect(array_keys($history->json('data.0')))->toBe([
-        'id', 'invoice_no', 'occurred_at', 'cashier_name', 'items_count', 'total_weight_kg', 'subtotal', 'discount', 'total', 'payment_method', 'status', 'customer_name',
+        'id', 'invoice_no', 'occurred_at', 'cashier_name', 'items_count', 'total_weight_kg', 'subtotal', 'discount', 'total', 'payment_method', 'status', 'hpp_provisional', 'customer_name',
     ]);
 
     Carbon::setTestNow();

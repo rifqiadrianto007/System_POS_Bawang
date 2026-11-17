@@ -24,6 +24,7 @@ class TransactionResource extends JsonResource
             'change' => $this->amount_paid === null ? null : $this->amount_paid - $this->total,
             'payment_method' => $this->payment_method,
             'status' => $this->status,
+            'hpp_provisional' => (bool) $this->hpp_provisional,
             'occurred_at' => $this->occurred_at?->toIso8601String(),
             'void_reason' => $this->void_reason,
             'voided_by' => $this->voided_by,
@@ -33,7 +34,9 @@ class TransactionResource extends JsonResource
 
         if ($request->user()?->role === 'owner') {
             $data['cogs'] = $this->items->sum('cogs');
-            $data['has_shortfall'] = $this->items->contains(fn ($item): bool => bccomp((string) $item->shortfall_kg, '0', 3) > 0);
+            $data['has_shortfall'] = $this->items->contains(fn ($item): bool =>
+                bccomp((string) $item->shortfall_kg, (string) $item->shortfall_resolved_kg, 3) > 0
+            );
         }
 
         return $data;

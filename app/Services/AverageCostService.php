@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Product;
 use App\Models\StockMovement;
+use Carbon\CarbonInterface;
 
 final class AverageCostService
 {
@@ -32,6 +33,34 @@ final class AverageCostService
         return ['stock_kg' => $this->formatWeight($milli), 'stock_value' => $value, 'avg_cost' => $avg];
     }
 
+    /** @return array{stock_kg:string,stock_value:int,avg_cost:?int} */
+    public function stockAt(Product|int $product, CarbonInterface $at): array
+    {
+        $id = $product instanceof Product ? $product->id : $product;
+        $row = StockMovement::query()->where('product_id', $id)->where('occurred_at', '<=', $at)
+            ->selectRaw('COALESCE(SUM(weight_kg), 0) AS stock_kg, COALESCE(SUM(value_delta), 0) AS stock_value')->first();
+        $weightMilli = $this->toMilli((string) $row->stock_kg);
+        $value = (int) $row->stock_value;
+        $average = null;
+        if ($weightMilli > 0) {
+            $numerator = bcmul((string) $value, '1000', 0);
+            $negative = str_starts_with($numerator, '-');
+            $absolute = ltrim($numerator, '-');
+            $quotient = (int) bcdiv($absolute, (string) $weightMilli, 0);
+            $remainder = (int) bcmod($absolute, (string) $weightMilli);
+            $average = $quotient + ($remainder * 2 >= $weightMilli ? 1 : 0);
+            if ($negative) {
+                $average *= -1;
+            }
+        }
+
+        return [
+            'stock_kg' => $this->formatWeight($weightMilli),
+            'stock_value' => $value,
+            'avg_cost' => $average,
+        ];
+    }
+
     public function cogs(int $weightMilli, int $stockMilli, int $stockValue): int
     {
         if ($weightMilli === $stockMilli && $stockMilli > 0) {
@@ -50,6 +79,29 @@ final class AverageCostService
         return $negative ? -$result : $result;
     }
 
+    /** @param array<int, array{product_id:int|string,weight_kg:string}> $items
+     *  @return array{items:list<array{product_id:int,insufficient:bool}>}
+     */
+    public function checkCartStock(array $items): array
+    {
+        $required = [];
+        foreach ($items as $item) {
+            $id = (int) $item['product_id'];
+            $required[$id] = ($required[$id] ?? 0) + $this->toMilli((string) $item['weight_kg']);
+        }
+
+        $result = [];
+        foreach ($required as $productId => $weightMilli) {
+            $balance = $this->stock($productId);
+            $result[] = [
+                'product_id' => $productId,
+                'insufficient' => $weightMilli > max(0, $this->toMilli($balance['stock_kg'])),
+            ];
+        }
+
+        return ['items' => $result];
+    }
+
     public function valueForWeight(int $weightMilli, int $pricePerKg): int
     {
         $numerator = bcmul((string) $weightMilli, (string) $pricePerKg, 0);
@@ -61,6 +113,21 @@ final class AverageCostService
     public function totalCost(string $weightKg, int $pricePerKg): int
     {
         return $this->valueForWeight($this->toMilli($weightKg), $pricePerKg);
+    }
+
+    public function averageUnitCost(int $weightMilli, int $value): ?int
+    {
+        if ($weightMilli <= 0) {
+            return null;
+        }
+        $numerator = bcmul((string) $value, '1000', 0);
+        $negative = str_starts_with($numerator, '-');
+        $absolute = ltrim($numerator, '-');
+        $quotient = (int) bcdiv($absolute, (string) $weightMilli, 0);
+        $remainder = (int) bcmod($absolute, (string) $weightMilli);
+        $average = $quotient + ($remainder * 2 >= $weightMilli ? 1 : 0);
+
+        return $negative ? -$average : $average;
     }
 
     public function updateLastUnitCost(Product $product): void

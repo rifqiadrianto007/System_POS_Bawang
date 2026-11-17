@@ -31,7 +31,9 @@ class TransactionHistoryController extends Controller
 
         $query->orderByDesc('occurred_at')->orderByDesc('id');
         if ($request->user()?->role === 'owner') {
-            $query->withExists(['items as has_shortfall' => fn ($items) => $items->where('shortfall_kg', '>', 0)]);
+            $query->withExists(['items as has_shortfall' => fn ($items) =>
+                $items->whereRaw('shortfall_resolved_kg < shortfall_kg')
+            ]);
         }
         $perPage = min($request->integer('per_page', 20), 50);
         $page = $query->paginate($perPage, ['*'], 'page', $request->integer('page', 1));
