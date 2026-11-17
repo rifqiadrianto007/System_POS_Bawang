@@ -54,19 +54,19 @@ it('creates a transaction with snapshots, discount, invoice, and stub cogs', fun
 
     $response->assertCreated()
         ->assertJsonPath('data.invoice_no', 'POS-261019-0001')
-        ->assertJsonPath('data.subtotal', 41300)
-        ->assertJsonPath('data.discount', 1300)
+        ->assertJsonPath('data.subtotal', 41500)
+        ->assertJsonPath('data.discount', 1500)
         ->assertJsonPath('data.total', 40000)
         ->assertJsonPath('data.status', 'completed')
         ->assertJsonPath('data.items.0.product_name', 'Merah A')
-        ->assertJsonPath('data.items.0.weight_kg', '1.500')
+        ->assertJsonPath('data.items.0.weight_kg', '0.500')
         ->assertJsonPath('data.items.0.price_per_kg', 27500)
-        ->assertJsonPath('data.items.0.line_total', 41300)
+        ->assertJsonPath('data.items.0.line_total', 14000)
         ->assertJsonMissingPath('data.items.0.cogs');
 
     $transaction = Transaction::query()->with('items')->firstOrFail();
     expect($transaction->cashier_id)->toBe($cashier->id)
-        ->and($transaction->items)->toHaveCount(1)
+        ->and($transaction->items)->toHaveCount(2)
         ->and($transaction->items->first()->product_name)->toBe('Merah A');
 
     Carbon::setTestNow();

@@ -26,8 +26,8 @@ it('calculates the documented retail rounding examples', function (string $weigh
         ->and($quote['items'][0]['price_tier'])->toBe('retail')
         ->and($quote['items'][0]['line_total'])->toBe($lineTotal);
 })->with([
-    ['0.250', 6900],
-    ['0.350', 9600],
+    ['0.250', 7000],
+    ['0.350', 10000],
     ['1.500', 41300],
 ]);
 
@@ -59,16 +59,18 @@ it('forces the 5kg tier for grosir customers', function () {
         ->and($quote['items'][0]['line_total'])->toBe(96000);
 });
 
-it('merges repeated products before selecting a tier', function () {
+it('keeps repeated products as separate item lines', function () {
     $product = pricingProduct();
     $quote = app(PricingService::class)->quoteCart('ecer', [
         ['product_id' => $product->id, 'weight_kg' => '1.000'],
         ['product_id' => $product->id, 'weight_kg' => '0.500'],
     ]);
 
-    expect($quote['items'])->toHaveCount(1)
-        ->and($quote['items'][0]['weight_kg'])->toBe('1.500')
-        ->and($quote['items'][0]['line_total'])->toBe(41300);
+    expect($quote['items'])->toHaveCount(2)
+        ->and($quote['items'][0]['weight_kg'])->toBe('1.000')
+        ->and($quote['items'][0]['line_total'])->toBe(27500)
+        ->and($quote['items'][1]['weight_kg'])->toBe('0.500')
+        ->and($quote['items'][1]['line_total'])->toBe(14000);
 });
 
 it('keeps different products in separate pricing lines', function () {

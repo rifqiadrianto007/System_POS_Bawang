@@ -4,6 +4,7 @@ use App\Models\AuditLog;
 use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\StockLot;
+use App\Models\StockCount;
 use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Models\TransactionItem;
@@ -121,12 +122,35 @@ it('AV-03 records sale shortfall and applies fallback cost without blocking the 
     $response = $this->withToken($token)->postJson('/api/v1/transactions', z03SalePayload($product, '5.000', 120000, '30000000-0000-4000-8000-000000000103'))->assertCreated();
     $item = TransactionItem::query()->findOrFail($response->json('data.items.0.id'));
     expect((int) $item->cogs)->toBe(100000)
+        ->and($response->json('data.hpp_provisional'))->toBeTrue()
         ->and($item->shortfall_kg)->toBe('3.000')
         ->and(z03Balance($product)['stock_kg'])->toBe('-3.000')
         ->and(z03Balance($product)['stock_value'])->toBe(-60000);
 });
+it('checks combined cart weights against sorted ledger stock and exposes only flags', function () {
+    [, $token] = z03User('kasir', 'cart-check');
+    $shortProduct = z03Product('Merah cart check short');
+    $enoughProduct = z03Product('Merah cart check enough');
+    z03Movement($shortProduct, '1.000', 20000);
+    z03Movement($enoughProduct, '2.000', 40000);
 
-it('AV-04 uses last unit cost then weighted same-kind purchase price then zero as shortfall fallback', function () {
+    $response = $this->withToken($token)->postJson('/api/v1/transactions/check-cart', [
+        'items' => [
+            ['product_id' => $shortProduct->id, 'weight_kg' => '0.500'],
+            ['product_id' => $shortProduct->id, 'weight_kg' => '0.750'],
+            ['product_id' => $enoughProduct->id, 'weight_kg' => '0.500'],
+        ],
+    ])->assertOk();
+
+    expect($response->json('data.items'))->toBe([
+        ['product_id' => $shortProduct->id, 'insufficient' => true],
+        ['product_id' => $enoughProduct->id, 'insufficient' => false],
+    ]);
+    $json = json_encode($response->json(), JSON_THROW_ON_ERROR);
+    expect($json)->not->toContain('stock_kg')->not->toContain('stock_value')->not->toContain('avg_cost');
+});
+
+it('AV-04 uses the product last average cost for shortfall and zero without product cost history', function () {
     [, $token] = z03User('kasir', 'av04');
     $lastCost = z03Product('Merah last cost', 23000);
     $last = $this->withToken($token)->postJson('/api/v1/transactions', z03SalePayload($lastCost, '2.000', 55000, '30000000-0000-4000-8000-000000000104'))->assertCreated();
@@ -138,12 +162,12 @@ it('AV-04 uses last unit cost then weighted same-kind purchase price then zero a
     z03Purchase($owner, '2026-11-02', '30.000', 21000);
     $sale = $this->withToken($token)->postJson('/api/v1/transactions', z03SalePayload($weighted, '2.000', 55000, '30000000-0000-4000-8000-000000000204'))->assertCreated();
     $weightedItem = TransactionItem::query()->findOrFail($sale->json('data.items.0.id'));
-    expect((int) $weightedItem->cogs)->toBe(41500)
+    expect((int) $weightedItem->cogs)->toBe(0)
         ->and($weightedItem->shortfall_kg)->toBe('2.000');
 
     $zero = z03Product('Merah no reserve');
     $zeroSale = $this->withToken($token)->postJson('/api/v1/transactions', z03SalePayload($zero, '2.000', 55000, '30000000-0000-4000-8000-000000000304'))->assertCreated();
-    expect((int) TransactionItem::query()->findOrFail($zeroSale->json('data.items.0.id'))->cogs)->toBe(41500);
+    expect((int) TransactionItem::query()->findOrFail($zeroSale->json('data.items.0.id'))->cogs)->toBe(0);
 });
 
 it('AV-05 returns the exact item kilograms and cogs value on void', function () {
@@ -216,25 +240,42 @@ it('CT-01 applies weighted average display shrink with exact loss value', functi
     expect($response->json('data.loss_value'))->toBe(30750)->and(z03Balance($product)['stock_kg'])->toBe('18.500')->and(z03Balance($product)['stock_value'])->toBe(379250);
 });
 
-it('CT-02 values a positive correction at average unit cost and records negative loss', function () {
+it('CT-02 values a positive correction at average unit cost without recording shrink', function () {
     [$owner,$token] = z03User('owner', 'ct02');
     $product = z03Product('Merah CT02');
     $purchase = z03BatchStock($owner, $product);
     $response = $this->withToken($token)->postJson('/api/v1/stock-counts', z03CountPayload($product, '22.000', $purchase))->assertCreated();
-    expect($response->json('data.loss_value'))->toBe(-41000)->and(z03Balance($product)['stock_value'])->toBe(451000);
+    expect($response->json('data.loss_value'))->toBe(0)->and(z03Balance($product)['stock_value'])->toBe(451000);
 });
 
-it('CT-03 resets zero or negative system stock to counted stock without profit or loss', function () {
+it('CT-03 records a positive count adjustment after negative stock as surplus, not shrink', function () {
     [$owner,$token] = z03User('owner', 'ct03');
     $product = z03Product('Merah CT03', 20000);
     $purchase = z03Purchase($owner);
     $zero = $this->withToken($token)->postJson('/api/v1/stock-counts', z03CountPayload($product, '5.000', $purchase))->assertCreated();
     expect($zero->json('data.loss_value'))->toBe(0)->and(z03Balance($product)['stock_value'])->toBe(100000);
-    $lot = StockLot::query()->where('purchase_id', $purchase->id)->where('product_id', $product->id)->firstOrFail();
-    z03LotMovement($lot, $product, '-8.000', -160000, 'sale');
+    StockMovement::query()->create(['product_id' => $product->id, 'lot_id' => null, 'type' => 'sale',
+        'weight_kg' => '-8.000', 'value_delta' => -160000, 'occurred_at' => now()]);
     $negative = $this->withToken($token)->postJson('/api/v1/stock-counts', z03CountPayload($product, '2.000', $purchase))->assertCreated();
-    expect($negative->json('data.loss_value'))->toBe(0)->and(z03Balance($product)['stock_kg'])->toBe('2.000')->and(z03Balance($product)['stock_value'])->toBe(40000);
+    expect($negative->json('data.loss_value'))->toBe(0)
+        ->and($negative->json('data.surplus_kg'))->toBe('5.000')
+        ->and($negative->json('data.surplus_value'))->toBe(100000)
+        ->and(z03Balance($product)['stock_kg'])->toBe('2.000')
+        ->and(z03Balance($product)['stock_value'])->toBe(40000);
     $this->withToken($token)->postJson('/api/v1/stock-counts', z03CountPayload($product, '-0.001', $purchase))->assertUnprocessable();
+});
+
+it('CT-06 never records a negative loss value for count shrink or surplus', function () {
+    [$owner, $token] = z03User('owner', 'ct06');
+    $product = z03Product('Merah CT06', 20000);
+    $purchase = z03Purchase($owner);
+    z03Movement($product, '10.000', 200000);
+    $shrink = $this->withToken($token)->postJson('/api/v1/stock-counts', z03CountPayload($product, '8.000', $purchase))->assertCreated();
+    $surplus = $this->withToken($token)->postJson('/api/v1/stock-counts', z03CountPayload($product, '9.000', $purchase))->assertCreated();
+    expect($shrink->json('data.loss_value'))->toBe(40000)
+        ->and($surplus->json('data.loss_value'))->toBe(0)
+        ->and($surplus->json('data.surplus_kg'))->toBe('1.000')
+        ->and(StockCount::query()->where('status', 'active')->where('loss_value', '<', 0)->exists())->toBeFalse();
 });
 
 it('CT-04 only cancels latest active count, requires a reason and writes exact reversal audit', function () {

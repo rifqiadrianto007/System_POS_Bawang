@@ -3,6 +3,7 @@
 use App\Models\AuditLog;
 use App\Models\Product;
 use App\Models\ProductPriceHistory;
+use App\Models\StockMovement;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -69,6 +70,28 @@ it('allows an owner to update prices and records history and audit', function ()
         ->and($history->changed_by)->toBe($owner->id)
         ->and($audit->entity_id)->toBe($product->id)
         ->and($audit->user_id)->toBe($owner->id);
+});
+
+it('allows changing product type while keeping existing stock on the same product and returns the latest product', function () {
+    [$owner, $token] = productUser('owner');
+    $product = Product::query()->create([
+        'name' => 'Bawang Merah A', 'jenis' => 'merah', 'price_retail' => 27500, 'price_5kg' => 24000,
+    ]);
+    $movement = StockMovement::query()->create([
+        'product_id' => $product->id, 'type' => 'in_sort', 'weight_kg' => '12.000', 'value_delta' => 288000,
+        'ref_type' => 'test', 'ref_id' => 1, 'occurred_at' => now(), 'created_by' => $owner->id,
+    ]);
+
+    $this->withToken($token)->putJson("/api/v1/products/{$product->id}", [
+        'name' => 'Bawang Merah A', 'jenis' => 'putih', 'price_retail' => 27500, 'price_5kg' => 24000,
+    ])->assertOk()
+        ->assertJsonPath('data.id', $product->id)
+        ->assertJsonPath('data.jenis', 'putih');
+
+    expect($product->fresh()->jenis)->toBe('putih')
+        ->and($movement->fresh()->product_id)->toBe($product->id)
+        ->and(AuditLog::query()->where('action', 'product.type_changed')->where('entity_id', $product->id)->value('payload'))
+        ->toMatchArray(['before' => ['jenis' => 'merah'], 'after' => ['jenis' => 'putih']]);
 });
 
 it('does not block a price order that needs owner review', function () {

@@ -4,6 +4,7 @@ use App\Models\Expense;
 use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\StockLot;
+use App\Services\StockAdditionService;
 use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Models\Transaction;
@@ -90,83 +91,102 @@ function z04PurchaseDetail(Purchase $purchase): array
     return app(PurchaseService::class)->present($purchase->fresh())->toArray();
 }
 
-it('SS-01 derives sorted unsorted sold and client shrink per purchase', function () {
+function z04Addition(Purchase $purchase, Product $product, User $owner, string $weight): void
+{
+    app(StockAdditionService::class)->create([
+        'batch_id' => $purchase->id, 'product_id' => $product->id, 'weight_kg' => $weight,
+    ], $owner->id);
+}
+
+it('SS-01 returns batch additions and remainder without deriving sales or shrink by batch', function () {
     $owner = z04Owner('ss01');
     $cashier = User::factory()->create(['role' => 'kasir', 'username' => 'z04-cash-ss01']);
     $purchase = z04Purchase($owner, '2026-11-01', '100.000', 20000);
     $products = [z04Product('A ss01'), z04Product('B ss01'), z04Product('C ss01')];
-    foreach ([['40.000', '2026-11-01'], ['30.000', '2026-11-01'], ['28.000', '2026-11-01']] as $i => [$weight,$date]) {
-        z04Lot($purchase, $products[$i], $owner, $weight, $date);
+    foreach (['40.000', '30.000', '28.000'] as $i => $weight) {
+        z04Addition($purchase, $products[$i], $owner, $weight);
     }
     foreach ([['40.000', 800000], ['30.000', 600000], ['25.000', 500000]] as $i => [$weight,$cogs]) {
         z04Sale($cashier, $products[$i], $weight, $cogs, $cogs, 'z04-ss01-'.$i);
     }
     $detail = z04PurchaseDetail($purchase);
-    expect($detail['sorted_kg'])->toBe('98.000')->and($detail['unsorted_kg'])->toBe('2.000')
-        ->and($detail['sold_kg'])->toBe('95.000')->and($detail['susut_kg'])->toBe('5.000');
+    expect($detail['added_weight_kg'])->toBe('98.000')->and($detail['remaining_weight_kg'])->toBe('2.000')
+        ->and($detail['cleaning_shrink_kg'])->toBe('0.000')
+        ->and($detail)->not->toHaveKey('sold_kg')->not->toHaveKey('susut_kg');
 });
 
-it('SS-02 allocates lifetime sales cumulatively to lots ordered by sorted date then id', function () {
+it('SS-02 sales never change metrics for either of two batches of the same product', function () {
     $owner = z04Owner('ss02');
     $cashier = User::factory()->create(['role' => 'kasir', 'username' => 'z04-cash-ss02']);
     $p1 = z04Purchase($owner, '2026-11-01', '20.000', 10000);
     $p2 = z04Purchase($owner, '2026-11-03', '20.000', 12000);
     $product = z04Product('Shared SS02');
-    z04Lot($p1, $product, $owner, '20.000', '2026-11-01');
-    z04Lot($p2, $product, $owner, '20.000', '2026-11-03');
+    z04Addition($p1, $product, $owner, '20.000');
+    z04Addition($p2, $product, $owner, '20.000');
     z04Sale($cashier, $product, '25.000', 300000, 250000, 'z04-ss02');
-    expect(z04PurchaseDetail($p1)['sold_kg'])->toBe('20.000')->and(z04PurchaseDetail($p2)['sold_kg'])->toBe('5.000');
+    foreach ([$p1, $p2] as $purchase) {
+        $detail = z04PurchaseDetail($purchase);
+        expect($detail['added_weight_kg'])->toBe('20.000')->and($detail['remaining_weight_kg'])->toBe('0.000')
+            ->and($detail)->not->toHaveKey('sold_kg')->not->toHaveKey('susut_kg');
+    }
 });
 
-it('SS-03 excludes void sales from purchase sold kilograms', function () {
+it('SS-03 void sales do not add derived sales metrics to batch responses', function () {
     $owner = z04Owner('ss03');
     $cashier = User::factory()->create(['role' => 'kasir', 'username' => 'z04-cash-ss03']);
     $product = z04Product('SS03');
     $purchase = z04Purchase($owner, '2026-11-01', '20.000', 10000);
-    z04Lot($purchase, $product, $owner, '10.000', '2026-11-01');
+    z04Addition($purchase, $product, $owner, '10.000');
     z04Sale($cashier, $product, '7.000', 70000, 70000, 'z04-ss03', 'void');
-    expect(z04PurchaseDetail($purchase)['sold_kg'])->toBe('0.000');
+    expect(z04PurchaseDetail($purchase))->not->toHaveKey('sold_kg')->not->toHaveKey('susut_kg');
 });
 
-it('SS-04 maps earlier unallocated shortfall sales when a later lot is added', function () {
+it('SS-04 a later addition resolves provisional HPP at product cost without batch sale allocation', function () {
     $owner = z04Owner('ss04');
     $cashier = User::factory()->create(['role' => 'kasir', 'username' => 'z04-cash-ss04']);
     $product = z04Product('SS04');
     z04Sale($cashier, $product, '2.000', 50000, 0, 'z04-ss04');
     $purchase = z04Purchase($owner, '2026-11-01', '10.000', 10000);
-    z04Lot($purchase, $product, $owner, '10.000', '2026-11-01');
-    expect(z04PurchaseDetail($purchase)['sold_kg'])->toBe('2.000');
+    z04Addition($purchase, $product, $owner, '10.000');
+    expect(z04PurchaseDetail($purchase)['added_weight_kg'])->toBe('10.000')
+        ->and(z04PurchaseDetail($purchase))->not->toHaveKey('sold_kg');
 });
 
-it('SS-05 has no cleaning loss recognition because kulak no longer has a close action', function () {
+it('SS-05 records cleaning loss only when the owner finishes sorting', function () {
     $owner = z04Owner('ss05');
     $token = $owner->createToken('ss05')->plainTextToken;
     $product = z04Product('SS05');
     $purchase = z04Purchase($owner, '2026-11-01', '100.000', 20000);
-    z04Lot($purchase, $product, $owner, '98.000', '2026-11-01');
-    $this->withToken($token)->getJson('/api/v1/reports/finance?period=daily&date=2026-11-03')->assertOk()
-        ->assertJsonPath('data.cleaning_loss_value', 0)->assertJsonPath('data.daily.0.cleaning_loss_value', 0);
+    z04Addition($purchase, $product, $owner, '98.000');
+    $this->withToken($token)->postJson('/api/v1/purchases/'.$purchase->id.'/finish-sorting')->assertOk()
+        ->assertJsonPath('data.cleaning_shrink_kg', '2.000')->assertJsonPath('data.cleaning_loss_value', 40000);
+    $this->withToken($token)->getJson('/api/v1/reports/finance?period=daily&date=2026-11-02')->assertOk()
+        ->assertJsonPath('data.cleaning_loss_value', 40000)->assertJsonPath('data.daily.0.cleaning_loss_value', 40000);
     $this->withToken($token)->postJson('/api/v1/purchases/'.$purchase->id.'/close')->assertNotFound();
 });
 
-it('SS-06 counts unmeasured gross weight from every batch as warehouse stock', function () {
+it('SS-06 counts the remaining weight of unlocked batches as unsorted stock', function () {
     $owner = z04Owner('ss06');
     $token = $owner->createToken('ss06')->plainTextToken;
     $product = z04Product('SS06');
     $open = z04Purchase($owner, '2026-11-01', '100.000', 20000);
-    z04Lot($open, $product, $owner, '70.000', '2026-11-01');
+    z04Addition($open, $product, $owner, '70.000');
     $closed = z04Purchase($owner, '2026-11-02', '50.000', 20000);
-    z04Lot($closed, $product, $owner, '20.000', '2026-11-02');
-    $this->withToken($token)->getJson('/api/v1/reports/stock?from=2026-11-01&to=2026-11-03')->assertOk()->assertJsonPath('data.warehouse_kg', '60.000');
+    z04Addition($closed, $product, $owner, '20.000');
+    $this->withToken($token)->getJson('/api/v1/reports/stock?from=2026-11-01&to=2026-11-03')->assertOk()
+        ->assertJsonMissingPath('data.warehouse_kg')->assertJsonPath('data.pending_gross_kg', '60.000');
 });
 
-it('SS-07 calculates weighted purchase price and null estimate for an empty purchase period', function () {
+it('SS-07 reports only event-based inventory and shrink metrics for a selected period', function () {
     $owner = z04Owner('ss07');
     $token = $owner->createToken('ss07')->plainTextToken;
     z04Purchase($owner, '2026-11-01', '10.000', 10000);
     z04Purchase($owner, '2026-11-02', '30.000', 20000);
-    $this->withToken($token)->getJson('/api/v1/reports/stock?from=2026-11-01&to=2026-11-02')->assertOk()->assertJsonPath('data.avg_purchase_price_per_kg', 17500);
-    $this->withToken($token)->getJson('/api/v1/reports/stock?from=2026-12-01&to=2026-12-02')->assertOk()->assertJsonPath('data.avg_purchase_price_per_kg', null)->assertJsonPath('data.susut_value_estimate', null);
+    $this->withToken($token)->getJson('/api/v1/reports/stock?from=2026-11-01&to=2026-11-02')->assertOk()
+        ->assertJsonPath('data.incoming_gross_kg', '40.000')->assertJsonPath('data.pending_gross_kg', '40.000')
+        ->assertJsonMissingPath('data.avg_purchase_price_per_kg')->assertJsonMissingPath('data.susut_value_estimate');
+    $this->withToken($token)->getJson('/api/v1/reports/stock?from=2026-12-01&to=2026-12-02')->assertOk()
+        ->assertJsonPath('data.display_shrink_value', 0)->assertJsonMissingPath('data.warehouse_kg');
 });
 
 it('SS-08 keeps client susut informational and out of net profit', function () {
@@ -175,31 +195,32 @@ it('SS-08 keeps client susut informational and out of net profit', function () {
     $cashier = User::factory()->create(['role' => 'kasir', 'username' => 'z04-cash-ss08']);
     $purchase = z04Purchase($owner, '2026-11-01', '20.000', 10000);
     $product = z04Product('SS08');
-    z04Lot($purchase, $product, $owner, '10.000', '2026-11-01');
+    z04Addition($purchase, $product, $owner, '10.000');
     z04Sale($cashier, $product, '2.000', 50000, 20000, 'z04-ss08');
     $before = $this->withToken($token)->getJson('/api/v1/reports/finance?from=2026-11-01&to=2026-11-01')->assertOk()->json('data.net_profit');
     z04Purchase($owner, '2026-11-01', '20.000', 10000);
     $this->withToken($token)->getJson('/api/v1/reports/finance?from=2026-11-01&to=2026-11-01')->assertOk()->assertJsonPath('data.net_profit', $before);
 });
 
-it('RP-01 returns the documented finance and stock example totals', function () {
+it('RP-01 calculates profit from sales, COGS, shrink events and operating expenses', function () {
     $owner = z04Owner('rp01');
     $token = $owner->createToken('rp01')->plainTextToken;
     $cashier = User::factory()->create(['role' => 'kasir', 'username' => 'z04-cash-rp01']);
     $purchase = z04Purchase($owner, '2026-11-01', '100.000', 20000);
     $products = [z04Product('A rp01'), z04Product('B rp01'), z04Product('C rp01')];
-    foreach ([['40.000', '2026-11-01'], ['30.000', '2026-11-01'], ['28.000', '2026-11-01']] as $i => [$weight,$date]) {
-        z04Lot($purchase, $products[$i], $owner, $weight, $date);
+    foreach (['40.000', '30.000', '28.000'] as $i => $weight) {
+        z04Addition($purchase, $products[$i], $owner, $weight);
     }
     foreach ([['40.000', 800000], ['30.000', 600000], ['25.000', 500000]] as $i => [$weight,$cogs]) {
         z04Sale($cashier, $products[$i], $weight, ($i === 0 ? 1040000 : ($i === 1 ? 780000 : 650000)), $cogs, 'z04-rp01-'.$i);
     }
     Expense::query()->create(['name' => 'Operasional', 'category' => 'lainnya', 'amount' => 50000, 'spent_at' => '2026-11-02', 'created_by' => $owner->id]);
     $this->withToken($token)->getJson('/api/v1/reports/finance?from=2026-11-01&to=2026-11-03')->assertOk()
-        ->assertJsonPath('data.net_profit', 520000)->assertJsonPath('data.cash_flow', 420000)
-        ->assertJsonPath('data.cleaning_loss_value', 0);
+        ->assertJsonPath('data.net_profit', 520000)->assertJsonPath('data.gross_profit', 570000)
+        ->assertJsonPath('data.operating_expenses', 50000)->assertJsonPath('data.cleaning_loss_value', 0);
     $this->withToken($token)->getJson('/api/v1/reports/stock?from=2026-11-01&to=2026-11-03')->assertOk()
-        ->assertJsonPath('data.sold_kg', '95.000')->assertJsonPath('data.cleaning_loss_value', 0)->assertJsonPath('data.susut_kg', '5.000');
+        ->assertJsonPath('data.sold_kg', '95.000')->assertJsonPath('data.cleaning_shrink_value', 0)
+        ->assertJsonPath('data.shrink_value', 0);
 });
 
 it('RP-02 preserves the lifetime accounting identity for a deterministic ledger fixture', function () {
@@ -207,7 +228,6 @@ it('RP-02 preserves the lifetime accounting identity for a deterministic ledger 
     $token = $owner->createToken('rp02')->plainTextToken;
     $cashier = User::factory()->create(['role' => 'kasir', 'username' => 'z04-cash-rp02']);
     mt_srand(3404);
-    $warehouseValue = 0;
     for ($i = 0; $i < 7; $i++) {
         $gross = mt_rand(30, 80);
         $unsorted = mt_rand(1, min(8, $gross - 1));
@@ -216,15 +236,16 @@ it('RP-02 preserves the lifetime accounting identity for a deterministic ledger 
         $sold = mt_rand(0, $sorted);
         $purchase = z04Purchase($owner, '2026-11-01', $gross.'.000', $price);
         $product = z04Product('RP02 '.$i);
-        z04Lot($purchase, $product, $owner, $sorted.'.000', '2026-11-01');
+        z04Addition($purchase, $product, $owner, $sorted.'.000');
         if ($sold > 0) {
             z04Sale($cashier, $product, $sold.'.000', $sold * ($price + 5000), $sold * $price, 'z04-rp02-'.$i);
         }
-        $warehouseValue += $unsorted * $price;
     }
     $finance = $this->withToken($token)->getJson('/api/v1/reports/finance?from=2026-11-01&to=2026-11-30')->assertOk()->json('data');
     $stock = $this->withToken($token)->getJson('/api/v1/reports/stock?from=2026-11-01&to=2026-11-30')->assertOk()->json('data');
-    expect($finance['net_profit'])->toBe($finance['cash_flow'] + $stock['stock_value'] + $warehouseValue);
+    expect($finance['reconciliation_difference'])->toBe(0)
+        ->and($finance['reconciliation_mismatch'])->toBeFalse()
+        ->and($stock)->not->toHaveKey('warehouse_kg');
 });
 
 it('RP-03 returns exactly the stock report top-level and product keys', function () {
@@ -232,7 +253,7 @@ it('RP-03 returns exactly the stock report top-level and product keys', function
     $token = $owner->createToken('rp03')->plainTextToken;
     z04Product('RP03');
     $data = $this->withToken($token)->getJson('/api/v1/reports/stock?from=2026-11-01&to=2026-11-01')->assertOk()->json('data');
-    expect(array_keys($data))->toBe(['from', 'to', 'incoming_gross_kg', 'sorted_kg', 'warehouse_kg', 'display_kg', 'shortfall_kg', 'sold_kg', 'display_shrink_kg', 'display_shrink_value', 'cleaning_shrink_kg', 'cleaning_loss_value', 'susut_kg', 'avg_purchase_price_per_kg', 'susut_value_estimate', 'stock_value', 'products']);
+    expect(array_keys($data))->toBe(['from', 'to', 'incoming_gross_kg', 'pending_gross_kg', 'clean_kg', 'cleaning_shrink_kg', 'cleaning_shrink_value', 'sold_kg', 'display_shrink_kg', 'display_shrink_value', 'shrink_kg', 'shrink_value', 'stock_ready_kg', 'display_value', 'unsorted_value', 'stock_value', 'products']);
     expect(array_keys($data['products'][0]))->toBe(['product_id', 'name', 'jenis', 'is_active', 'stock_kg', 'shortfall_kg', 'stock_value', 'avg_cost', 'sold_kg', 'display_shrink_kg', 'display_shrink_value', 'last_count_date']);
 });
 
@@ -249,13 +270,15 @@ it('RP-04 reconciles cleaning loss total to daily rows and their net profit sum'
         ->and($data['net_profit'])->toBe(array_sum(array_column($data['daily'], 'net_profit')));
 });
 
-it('RP-05 returns stock rows and totals with the documented display and warehouse semantics', function () {
+it('RP-05 returns stock rows and totals with display and unsorted inventory semantics', function () {
     $owner = z04Owner('rp05');
     $token = $owner->createToken('rp05')->plainTextToken;
     $product = z04Product('RP05');
     $purchase = z04Purchase($owner, '2026-11-01', '10.000', 10000);
-    z04Lot($purchase, $product, $owner, '6.000', '2026-11-01');
-    $this->withToken($token)->getJson('/api/v1/stock')->assertOk()->assertJsonPath('totals.display_kg', '6.000')->assertJsonPath('totals.warehouse_kg', '4.000')->assertJsonPath('data.0.product_id', $product->id);
+    z04Addition($purchase, $product, $owner, '6.000');
+    $this->withToken($token)->getJson('/api/v1/stock')->assertOk()->assertJsonPath('totals.display_kg', '6.000')
+        ->assertJsonPath('totals.unsorted_kg', '4.000')->assertJsonMissingPath('totals.warehouse_kg')
+        ->assertJsonPath('data.0.product_id', $product->id);
 });
 
 it('RP-06 keeps purchase totals independent of expenses and sales', function () {
@@ -264,7 +287,7 @@ it('RP-06 keeps purchase totals independent of expenses and sales', function () 
     $cashier = User::factory()->create(['role' => 'kasir', 'username' => 'z04-cash-rp06']);
     $purchase = z04Purchase($owner, '2026-11-01', '10.000', 10000);
     $product = z04Product('RP06');
-    z04Lot($purchase, $product, $owner, '10.000', '2026-11-01');
+    z04Addition($purchase, $product, $owner, '10.000');
     $before = $this->withToken($token)->getJson('/api/v1/reports/finance?from=2026-11-01&to=2026-11-01')->assertOk()->json('data.purchases_total');
     Expense::query()->create(['name' => 'Biaya', 'category' => 'lainnya', 'amount' => 20000, 'spent_at' => '2026-11-01', 'created_by' => $owner->id]);
     z04Sale($cashier, $product, '1.000', 30000, 10000, 'z04-rp06');
